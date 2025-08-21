@@ -6,6 +6,7 @@ def get_main_menu():
     keyboard = [
         [InlineKeyboardButton("🏋️‍♂️ Начать тренировку", callback_data='start_training')],
         [InlineKeyboardButton("🗂️ Мои тренировки", callback_data='my_trainings')],
+        [InlineKeyboardButton("🤖 AI-консультант", callback_data='my_ai_assistant')],
         [InlineKeyboardButton("⚙️ Настройки", callback_data='settings')]
     ]
     return InlineKeyboardMarkup(keyboard)
