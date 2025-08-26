@@ -10,6 +10,7 @@
 - telegram.ext: Для работы с контекстом и ConversationHandler.
 - bot.keyboards.personal_data_menu: Для получения меню личных данных.
 - bot.utils.logger: Для логирования событий и ошибок.
+- SET_NAME: Константа для идентификации состояния диалога.
 
 Автор: Aksarin A.
 Дата создания: 21/08/2025
@@ -21,7 +22,8 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
-
+from bot.handlers.callbacks import SET_NAME
+from bot.config.settings import DB_PATH
 
 # Инициализация логгера
 logger = setup_logging()
@@ -51,8 +53,16 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     logger.info(f"Начало обработки ввода имени для пользователя {user_id}: {name}")
 
+    if not name or len(name) > 50:  # Пример ограничения длины имени
+        logger.warning(f"Пользователь {user_id} отправил некорректное имя: {name}")
+        await update.message.reply_text(
+            "⚠️ Имя не может быть пустым или длиннее 50 символов. Пожалуйста, введите корректное имя:",
+            reply_markup=None
+        )
+        return SET_NAME
+
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
         if not c.fetchone():

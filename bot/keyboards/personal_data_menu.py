@@ -7,6 +7,11 @@ def get_personal_data_menu():
         [
             InlineKeyboardButton(
                 "Имя", callback_data='set_name'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "Пол", callback_data='set_gender'
             ),
             InlineKeyboardButton(
                 "Возраст", callback_data='set_age'
@@ -24,6 +29,7 @@ def get_personal_data_menu():
             InlineKeyboardButton(
                 "🔙 Назад", callback_data='settings'
             )
-        ]
+        ],
+
     ]
     return InlineKeyboardMarkup(keyboard)

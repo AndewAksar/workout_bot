@@ -1,8 +1,8 @@
-# bot/handlers/set_weight.py
+# bot/handlers/set_gender.py
 """
-Модуль: set_weight.py
-Описание: Модуль содержит обработчики для ввода данных профиля пользователя в рамках ConversationHandler
-и определения состояний для диалогов. Обрабатывает ввод веса и команду отмены.
+Модуль: set_gender.py
+Описание: Модуль содержит обработчики для ввода пола пользователя в рамках ConversationHandler
+и определения состояний для диалогов. Обрабатывает ввод пола пользователя и команду отмены.
 
 Зависимости:
 - sqlite3: Для работы с базой данных SQLite.
@@ -25,40 +25,36 @@ from telegram.ext import (
     ConversationHandler
 )
 
+from bot.handlers.callbacks import SET_GENDER
+from bot.config.settings import DB_PATH
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
-from bot.config.settings import DB_PATH
-
 
 logger = setup_logging()
 
-async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
-    Обработчик ввода веса пользователя.
-
+    Обработчик ввода пола пользователя.
     Описание:
-        Проверяет корректность введенного веса (число с плавающей точкой от 0 до 500),
-        сохраняет его в базе данных и возвращает меню личных данных.
-        При некорректном вводе отправляет сообщение об ошибке.
-
+        Сохраняет введенный пол пользователем и возвращает в меню настроек.
     Аргументы:
         update (telegram.Update): Объект обновления, содержащий введенное сообщение.
         context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
     Возвращаемое значение:
         int: ConversationHandler.END, завершающий диалог.
-
     Исключения:
-        - ValueError: Если введено некорректное значение веса.
         - sqlite3.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
 
     Пример использования:
-        Пользователь вводит вес, бот сохраняет его или запрашивает корректный ввод.
+        Пользователь вводит свой пол, бот сохраняет его и возвращает меню настроек тренировок.
     """
+    logger.info("Функция set_gender вызвана")
+
     user_id = update.message.from_user.id
-    weight = float(update.message.text.strip())
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.db')
+    gender = update.message.text.strip()
+
+    logger.info(f"Начало обработки ввода пола пользователя {user_id}: {gender}")
 
     try:
         logger.info(f"Подключение к базе данных: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
@@ -78,29 +74,37 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
             conn.commit()
 
-        if weight < 0 or weight > 500:
-            logger.warning(f"Пользователь {user_id} отправил некорректные данные: {weight}")
-            raise ValueError("⚠️ Некорректный ввод веса (0 - 500 кг).")
-        c.execute("UPDATE UserSettings SET weight = ? WHERE user_id = ?", (weight, user_id))
-        conn.commit()
-        logger.info(f"Вес успешно обновлён для пользователя {user_id}: {weight}")
-        await update.message.reply_text(
-            f"✅ Вес обновлен: {weight} кг",
-            reply_markup=get_personal_data_menu()
-        )
-        conn.close()
-        return ConversationHandler.END
-    except ValueError:
-        await update.message.reply_text(
-            "⚠️ Пожалуйста, введите корректное число для веса (например, 70.5).",
-            reply_markup=get_personal_data_menu()
-        )
-        return ConversationHandler.END
+        if gender.lower() in ["мужской", "женский"]:
+            c.execute("UPDATE UserSettings SET gender = ? WHERE user_id = ?", (gender.lower(), user_id))
+            conn.commit()
+            logger.info(f"Пол успешно обновлён для пользователя {user_id}: {gender}")
+            await update.message.reply_text(
+                "✅ Пол успешно обновлён!",
+                reply_markup=get_personal_data_menu()
+            )
+            conn.close()
+            return ConversationHandler.END
+        else:
+            logger.warning(f"Пользователь {user_id} отправил некорректные данные: {gender}")
+            await update.message.reply_text(
+                "⚠️ Пожалуйста, введите корректные данные (мужской/женский):",
+                reply_markup=None
+            )
+            conn.close()
+            return SET_GENDER
     except sqlite3.Error as e:
         logger.error(f"Ошибка базы данных для пользователя {user_id}: {e}")
         await update.message.reply_text(
             "❌ Произошла ошибка при сохранении данных. Попробуйте снова.",
             reply_markup=get_personal_data_menu()
         )
-        conn.close()
         return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка для пользователя {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ Произошла неизвестная ошибка. Попробуйте снова.",
+            reply_markup=get_personal_data_menu()
+        )
+        return ConversationHandler.END
+
+

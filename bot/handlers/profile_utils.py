@@ -63,7 +63,7 @@ def get_user_profile(user_id: int) -> tuple:
         logger.info(f"Попытка получить данные профиля пользователя для user_id: {user_id}")
 
         c.execute(
-            "SELECT name, age, weight, height, training_type, username FROM UserSettings WHERE user_id = ?",
+            "SELECT name, age, weight, height, gender, username FROM UserSettings WHERE user_id = ?",
             (user_id,)
         )
         profile = c.fetchone()

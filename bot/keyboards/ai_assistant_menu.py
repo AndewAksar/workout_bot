@@ -6,17 +6,7 @@ def get_ai_assistant_menu():
     keyboard = [
         [
             InlineKeyboardButton(
-                "💬 Получить общую консультацию у AI-консультанта", callback_data='set_training_type'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🍴 Расписать диету", callback_data='set_training_type'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📈 Разработать план тренировок", callback_data='set_training_type'
+                "💬 Получить консультацию у AI-консультанта", callback_data='start_ai_assistant'
             )
         ],
         [

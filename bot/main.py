@@ -44,22 +44,28 @@ from bot.commands.help_command import help
 from bot.commands.contact_command import contact
 from bot.commands.settings_command import settings
 from bot.commands.cancel_command import cancel
-from handlers.callbacks import (
-    button_callback,
-    set_age,
-    set_weight,
-    set_height,
-    set_training_type
-)
+
+from handlers.callbacks import button_callback
+from handlers.set_age import set_age
+from handlers.set_weight import set_weight
+from handlers.set_height import set_height
+from handlers.set_gender import set_gender
 from bot.handlers.set_name import set_name
 from handlers.callbacks import (
     SET_NAME,
     SET_AGE,
     SET_WEIGHT,
     SET_HEIGHT,
-    SET_TRAINING_TYPE
+    SET_GENDER
 )
-from database.db_init import init_db
+from bot.ai_assistant.ai_handler import (
+    start_ai_assistant,
+    handle_ai_message,
+    end_ai_consultation,
+    ai_error_handler,
+    AI_CONSULTATION
+)
+from bot.database.db_init import init_db
 
 
 # Инициализация логгера для записи событий и ошибок
@@ -119,10 +125,10 @@ def main() -> None:
                     set_height
                 )
             ],
-            SET_TRAINING_TYPE: [
+            SET_GENDER: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    set_training_type
+                    set_gender
                 )
             ],
         },
@@ -132,12 +138,31 @@ def main() -> None:
         conversation_timeout=300
     )
 
+    ai_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_ai_assistant, pattern='^start_ai_assistant$')],
+        states={
+            AI_CONSULTATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
+                CallbackQueryHandler(end_ai_consultation, pattern='^end_ai_consultation$')
+            ],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],  # Если есть команда /cancel
+        per_chat=True,
+        per_user=True
+    )
+
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("contacts", contact))
     application.add_handler(CommandHandler("settings", settings))
     # application.add_handler(CallbackQueryHandler(button_callback))
+
+    # Регистрация обработчика для AI-консультации
+    application.add_handler(ai_conv_handler)
+    application.add_error_handler(ai_error_handler)
+
+    # Регистрация обработчика ConversationHandler для обработки состояний
     application.add_handler(conv_handler)
 
     # Логирование успешного запуска бота

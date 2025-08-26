@@ -20,9 +20,7 @@ import sqlite3
 from telegram import Update
 from telegram.ext import (
     ContextTypes,
-    ConversationHandler,
-    MessageHandler,
-    filters
+    ConversationHandler
 )
 
 from bot.keyboards.main_menu import get_main_menu
@@ -31,52 +29,48 @@ from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.keyboards.training_settings_menu import get_training_settings_menu
 from bot.keyboards.ai_assistant_menu import get_ai_assistant_menu
 from bot.utils.logger import setup_logging
-
+from bot.config.settings import (
+    DB_PATH,
+    SET_NAME,
+    SET_AGE,
+    SET_WEIGHT,
+    SET_HEIGHT,
+    SET_GENDER
+)
+from bot.ai_assistant.ai_handler import (
+    start_ai_assistant, end_ai_consultation
+)
 
 # Инициализация логгера для записи событий и ошибок.
 logger = setup_logging()
 
-# Определение состояний для ConversationHandler.
-# Используется для управления диалогами при вводе данных пользователем.
-SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_TRAINING_TYPE = range(5)
-"""
-Константы: SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_TRAINING_TYPE
-Описание: Состояния ConversationHandler для обработки ввода имени, возраста, веса,
-роста и типа тренировок соответственно.
-Значения: Целые числа от 0 до 4, представляющие этапы диалога.
-"""
-
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Обработчик callback-запросов для интерактивных кнопок.
-
     Описание:
         Обрабатывает нажатия на кнопки в меню, выполняет соответствующие действия
         (например, отображение меню, профиля или запуск ввода данных) и возвращает
         состояние ConversationHandler для продолжения диалога или его завершения.
-
     Аргументы:
         update (telegram.Update): Объект обновления, содержащий информацию о callback-запросе.
         context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
     Возвращаемое значение:
         int: Состояние ConversationHandler (например, SET_NAME, SET_AGE или ConversationHandler.END).
-
     Исключения:
         - sqlite3.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщений.
-
     Пример использования:
         Пользователь нажимает кнопку в меню, бот отвечает соответствующим сообщением и/или переходит
         в состояние ввода данных.
     """
+
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} нажал кнопку: {query.data}")
 
     # Подключение к базе данных
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     if query.data == "start_training":
@@ -91,9 +85,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
     elif query.data == "my_ai_assistant":
         await query.message.edit_text(
-            "🤖 Здесь можно будет воспользоваться AI-консультантом.",
+            "🤖 Воспользоваться AI-консультантом.",
             reply_markup=get_ai_assistant_menu()
         )
+
+    elif query.data == "start_ai_assistant":
+        return await start_ai_assistant(update, context)
+
+    elif query.data == "end_ai_consultation":
+        return await end_ai_consultation(update, context)
+
     elif query.data == "settings":
         await query.message.edit_text(
             "⚙️ Настройки профиля:",
@@ -110,18 +111,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=get_training_settings_menu()
         )
     elif query.data == "show_profile":
-        c.execute("SELECT name, age, weight, height, training_type, username FROM UserSettings WHERE user_id = ?",
+        c.execute("SELECT name, age, weight, height, gender, username "
+                      "FROM UserSettings "
+                      "WHERE user_id = ?",
                   (user_id,))
         profile = c.fetchone()
         if profile:
             greeting = (
                 f"<b>Ваш профиль:</b>\n"
-                f"👤 Имя: {profile[0] if profile[0] else 'Не указано'}\n"
-                f"🎂 Возраст: {profile[1] if profile[1] else 'Не указан'}\n"
-                f"⚖️ Вес: {profile[2] if profile[2] else 'Не указан'} кг\n"
-                f"📏 Рост: {profile[3] if profile[3] else 'Не указан'} см\n"
-                f"💪 Тип тренировок: {profile[4] if profile[4] else 'Не указан'}\n"
-                f"📧 Telegram: @{profile[5] if profile[5] else 'Не указан'}"
+                f"👤 Имя: <code>{profile[0] if profile[0] else 'Не указано'}</code>\n"
+                f"Возраст: <code>{profile[1] if profile[1] else 'Не указан'}</code>\n"
+                f"Вес: <code>{profile[2] if profile[2] else 'Не указан'}</code> кг\n"
+                f"Рост: <code>{profile[3] if profile[3] else 'Не указан'}</code> см\n"
+                f"Пол: <code>{profile[4] if profile[4] else 'Не указан'}</code>\n\n"
+                f"📧 Telegram: <code>@{profile[5] if profile[5] else 'Не указан'}</code>"
             )
         else:
             greeting = "⚠️ Профиль не найден. Пожалуйста, используйте /start для инициализации."
@@ -130,212 +133,48 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode="HTML",
             reply_markup=get_settings_menu()
         )
+
     elif query.data == "main_menu":
         await query.message.edit_text(
             "💪 Выберите действие в меню ниже:",
             reply_markup=get_main_menu()
         )
+
     elif query.data == "set_name":
         await query.message.edit_text(
             "✍️ Введите ваше имя:",
             reply_markup=None
         )
+
         logger.info(f"Переход в состояние SET_NAME для пользователя {user_id}")
         return SET_NAME
+
     elif query.data == "set_age":
         await query.message.edit_text(
-            "🎂 Введите ваш возраст (число):",
+            "✍️ Введите ваш возраст (число):",
             reply_markup=None
         )
         return SET_AGE
     elif query.data == "set_weight":
         await query.message.edit_text(
-            "⚖️ Введите ваш вес в кг (например, 70.5):",
+            "✍️️ Введите ваш вес в кг (например, 70.5):",
             reply_markup=None
         )
         return SET_WEIGHT
     elif query.data == "set_height":
         await query.message.edit_text(
-            "📏 Введите ваш рост в см (например, 175):",
+            "✍️ Введите ваш рост в см (например, 175):",
             reply_markup=None
         )
+
         return SET_HEIGHT
-    elif query.data == "set_training_type":
+    elif query.data == "set_gender":
         await query.message.edit_text(
-            "💪 Введите тип тренировок (например, силовые, кардио, йога):",
+            "✍️ Введите ваш пол (мужской/женский):",
             reply_markup=None
         )
-        return SET_TRAINING_TYPE
+
+        return SET_GENDER
 
     conn.close()
     return ConversationHandler.END
-
-async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Обработчик ввода возраста пользователя.
-
-    Описание:
-        Проверяет корректность введенного возраста (целое число от 0 до 150),
-        сохраняет его в базе данных и возвращает меню личных данных.
-        При некорректном вводе отправляет сообщение об ошибке.
-
-    Аргументы:
-        update (telegram.Update): Объект обновления, содержащий введенное сообщение.
-        context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
-    Возвращаемое значение:
-        int: ConversationHandler.END, завершающий диалог.
-
-    Исключения:
-        - ValueError: Если введено некорректное значение возраста.
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
-        - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
-    Пример использования:
-        Пользователь вводит возраст, бот сохраняет его или запрашивает корректный ввод.
-    """
-    user_id = update.message.from_user.id
-    try:
-        age = int(update.message.text.strip())
-        if age < 0 or age > 150:
-            raise ValueError("Некорректный возраст")
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET age = ? WHERE user_id = ?", (age, user_id))
-        conn.commit()
-        conn.close()
-        await update.message.reply_text(
-            f"✅ Возраст обновлен: {age}",
-            reply_markup=get_personal_data_menu()
-        )
-    except ValueError:
-        await update.message.reply_text(
-            "⚠️ Пожалуйста, введите корректное число для возраста.",
-            reply_markup=get_personal_data_menu()
-        )
-    return ConversationHandler.END
-
-async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Обработчик ввода веса пользователя.
-
-    Описание:
-        Проверяет корректность введенного веса (число с плавающей точкой от 0 до 500),
-        сохраняет его в базе данных и возвращает меню личных данных.
-        При некорректном вводе отправляет сообщение об ошибке.
-
-    Аргументы:
-        update (telegram.Update): Объект обновления, содержащий введенное сообщение.
-        context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
-    Возвращаемое значение:
-        int: ConversationHandler.END, завершающий диалог.
-
-    Исключения:
-        - ValueError: Если введено некорректное значение веса.
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
-        - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
-    Пример использования:
-        Пользователь вводит вес, бот сохраняет его или запрашивает корректный ввод.
-    """
-    user_id = update.message.from_user.id
-    try:
-        weight = float(update.message.text.strip())
-        if weight < 0 or weight > 500:
-            raise ValueError("Некорректный вес")
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET weight = ? WHERE user_id = ?", (weight, user_id))
-        conn.commit()
-        conn.close()
-        await update.message.reply_text(
-            f"✅ Вес обновлен: {weight} кг",
-            reply_markup=get_personal_data_menu()
-        )
-    except ValueError:
-        await update.message.reply_text(
-            "⚠️ Пожалуйста, введите корректное число для веса (например, 70.5).",
-            reply_markup=get_personal_data_menu()
-        )
-    return ConversationHandler.END
-
-async def set_height(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Обработчик ввода роста пользователя.
-
-    Описание:
-        Проверяет корректность введенного роста (число с плавающей точкой от 0 до 300),
-        сохраняет его в базе данных и возвращает меню личных данных.
-        При некорректном вводе отправляет сообщение об ошибке.
-
-    Аргументы:
-        update (telegram.Update): Объект обновления, содержащий введенное сообщение.
-        context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
-    Возвращаемое значение:
-        int: ConversationHandler.END, завершающий диалог.
-
-    Исключения:
-        - ValueError: Если введено некорректное значение роста.
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
-        - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
-    Пример использования:
-        Пользователь вводит рост, бот сохраняет его или запрашивает корректный ввод.
-    """
-    user_id = update.message.from_user.id
-    try:
-        height = float(update.message.text.strip())
-        if height < 0 or height > 300:
-            raise ValueError("Некорректный рост")
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET height = ? WHERE user_id = ?", (height, user_id))
-        conn.commit()
-        conn.close()
-        await update.message.reply_text(
-            f"✅ Рост обновлен: {height} см",
-            reply_markup=get_personal_data_menu()
-        )
-    except ValueError:
-        await update.message.reply_text(
-            "⚠️ Пожалуйста, введите корректное число для роста (например, 175).",
-            reply_markup=get_personal_data_menu()
-        )
-    return ConversationHandler.END
-
-async def set_training_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Обработчик ввода типа тренировок.
-
-    Описание:
-        Сохраняет введенный пользователем тип тренировок в базе данных и возвращает меню настроек тренировок.
-
-    Аргументы:
-        update (telegram.Update): Объект обновления, содержащий введенное сообщение.
-        context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
-    Возвращаемое значение:
-        int: ConversationHandler.END, завершающий диалог.
-
-    Исключения:
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
-        - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
-    Пример использования:
-        Пользователь вводит тип тренировок, бот сохраняет его и возвращает меню настроек тренировок.
-    """
-    user_id = update.message.from_user.id
-    training_type = update.message.text.strip()
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("UPDATE UserSettings SET training_type = ? WHERE user_id = ?", (training_type, user_id))
-    conn.commit()
-    conn.close()
-    await update.message.reply_text(
-        f"✅ Тип тренировок обновлен: {training_type}",
-        reply_markup=get_training_settings_menu()
-    )
-    return ConversationHandler.END
-

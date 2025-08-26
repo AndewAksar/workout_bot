@@ -13,12 +13,22 @@
 Дата создания: 19/08/2025
 """
 
+import os
 from os import environ
 from dotenv import load_dotenv
 
 
 # Загрузка переменных окружения из файла .env
 load_dotenv()
+
+# Настройки для OAuth
+OAUTH_URL = environ.get('OAUTH_URL')
+GIGACHAT_API_URL = environ.get('GIGACHAT_API_URL')
+CLIENT_CREDENTIALS = environ.get('CLIENT_CREDENTIALS')
+"""
+str: Конфигурация OAuth для авторизации в Sberbank API.
+Необходима для взаимодействия с API Sberbank.
+"""
 
 # Токен Telegram-бота, полученный из переменной окружения
 TELEGRAM_TOKEN = environ.get('TELEGRAM_TOKEN')
@@ -38,3 +48,28 @@ WELCOME_MESSAGE = (
 str: Текст приветственного сообщения, отправляемого пользователю при выполнении команды /start.
 Содержит эмодзи и инструкцию для взаимодействия с ботом.
 """
+
+# Путь к базе данных
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'database', 'users.db')
+"""
+str: Путь к файлу базы данных, используемой ботом. Во избежании конфликтов с другими частями приложения.
+"""
+
+# Определение состояний для ConversationHandler.
+# Используется для управления диалогами при вводе данных пользователем.
+SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER = range(5)
+"""
+Константы: SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER
+Описание: Состояния ConversationHandler для обработки ввода имени, возраста, веса,
+роста и пола пользователя.
+Значения: Целые числа от 0 до 4, представляющие этапы диалога.
+"""
+
+# Список допустимых команд бота.
+VALID_COMMANDS = [
+    "/start",
+    "/help",
+    "/cancel",
+    "/contacts",
+    "/settings",
+]
