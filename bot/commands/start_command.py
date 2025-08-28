@@ -93,7 +93,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             (user_id,)
         )
         profile = c.fetchone()
-        conn.close()
 
         # Формирование приветственного сообщения
         greeting = (
@@ -123,7 +122,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
-            delay=3
+            delay=5
         )
 
     except sqlite3.Error as e:
@@ -138,7 +137,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
-            delay=3
+            delay=5
         )
 
     except Exception as e:
@@ -147,7 +146,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "❌ Произошла непредвиденная ошибка. Попробуйте снова позже.",
             reply_markup=get_main_menu()
         )
-
         # Планируем удаление только сообщения с командой /start даже при ошибке
         await schedule_message_deletion(
             context,
@@ -161,22 +159,3 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             conn.close()
             logger.info(f"Соединение с базой данных закрыто для пользователя {user_id}")
 
-        # Планируем удаление сообщений, только если sent_message определена
-        if sent_message:
-            message_ids = [update.message.message_id, sent_message.message_id]
-            await schedule_message_deletion(
-                context,
-                message_ids,
-                chat_id=update.message.chat_id,
-                delay=5)
-
-        else:
-            # Если sent_message не определена, удаляем только сообщение пользователя
-            await schedule_message_deletion(
-                context,
-                [update.message.message_id],
-                chat_id=update.message.chat_id,
-                delay=5
-            )
-            logger.warning(
-                f"Ответное сообщение не было отправлено для пользователя {user_id}, удаляется только команда /start")

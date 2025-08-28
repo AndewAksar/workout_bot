@@ -19,14 +19,13 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
-    ConversationHandler,
-    MessageHandler,
-    filters
+    ConversationHandler
 )
 
 from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
 from bot.ai_assistant.ai_api import generate_gigachat_response
+from bot.utils.message_deletion import schedule_message_deletion
 
 
 logger = setup_logging()
@@ -36,6 +35,9 @@ AI_CONSULTATION = 1
 
 # Глобальная переменная для хранения токена
 GIGACHAT_AUTH_TOKEN = None
+
+# Ограничение на длину сообщения
+MAX_MESSAGE_LENGTH = 4096
 
 # Обработчик запуска консультации с AI (вызывается по callback_data='start_ai_assistant')
 async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -51,6 +53,9 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} начал консультацию с AI-ассистентом.")
+
+    # Устанавливаем флаг активного диалога
+    context.user_data['conversation_active'] = True
 
     # Клавиатура с кнопкой выхода
     exit_keyboard = InlineKeyboardMarkup([
@@ -76,11 +81,38 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """
     user_message = update.message.text
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     logger.info(f"Пользователь {user_id} спросил AI: {user_message}")
 
-    response = generate_gigachat_response(user_message, user_id)
-    await update.message.reply_text(response)
-    return AI_CONSULTATION  # Остаемся в состоянии для продолжения диалога
+    try:
+        response = generate_gigachat_response(user_message, user_id)
+        logger.debug(f"Длина ответа от GigaChat: {len(response)} символов")
+
+        # Разделяем ответ, если он превышает лимит Telegram
+        if len(response) <= MAX_MESSAGE_LENGTH:
+            sent_message = await update.message.reply_text(response)
+        else:
+            # Разбиваем текст на части по MAX_MESSAGE_LENGTH
+            messages = []
+            for i in range(0, len(response), MAX_MESSAGE_LENGTH):
+                part = response[i:i + MAX_MESSAGE_LENGTH]
+                # Убедимся, что часть заканчивается на полном предложении, если возможно
+                if i + MAX_MESSAGE_LENGTH < len(response):
+                    last_period = part.rfind('.')
+                    if last_period != -1:
+                        part = part[:last_period + 1]
+                sent_message = await update.message.reply_text(part)
+                messages.append(sent_message.message_id)
+
+        return AI_CONSULTATION  # Остаемся в состоянии для продолжения диалога
+    except Exception as e:
+        logger.error(f"Ошибка в handle_ai_message для пользователя {user_id}: {e}")
+        await update.callback_query.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+
+        # Сбрасываем флаг диалога
+        context.user_data['conversation_active'] = False
+
+        return ConversationHandler.END
 
 # Обработчик завершения консультации (по callback_data='end_ai_consultation')
 async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -101,6 +133,10 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
         "🤖 Консультация завершена. Возвращаемся в главное меню.",
         reply_markup=get_main_menu()
     )
+
+    # Сбрасываем флаг диалога
+    context.user_data['conversation_active'] = False
+
     return ConversationHandler.END
 
 # Обработчик ошибок для AI
@@ -114,8 +150,22 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         None
     """
     logger.error(f"Ошибка в AI-ассистенте: {context.error}")
+    chat_id = update.effective_chat.id
+
     if update.callback_query:
-        await update.callback_query.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+        try:
+            message = await update.callback_query.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+            await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+        except Exception as send_error:
+            logger.error(f"Ошибка при отправке сообщения об ошибке: {send_error}")
+
     elif update.message:
-        await update.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+        try:
+            message = await update.message.reply_text("⚠️ Произошла ошибка (2). Консультация завершена.")
+            await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+        except Exception as send_error:
+            logger.error(f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}")
+
     return ConversationHandler.END
+
+

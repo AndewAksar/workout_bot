@@ -73,108 +73,139 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    if query.data == "start_training":
-        await query.message.edit_text(
-            "🏋️‍♂️ Тренировка начата! Следуйте инструкциям или добавьте свои упражнения.",
-            reply_markup=get_main_menu()
-        )
-    elif query.data == "my_trainings":
-        await query.message.edit_text(
-            "🗂️ Здесь будут отображаться ваши тренировки (функция в разработке).",
-            reply_markup=get_main_menu()
-        )
-    elif query.data == "my_ai_assistant":
-        await query.message.edit_text(
-            "🤖 Воспользоваться AI-консультантом.",
-            reply_markup=get_ai_assistant_menu()
-        )
-
-    elif query.data == "start_ai_assistant":
-        return await start_ai_assistant(update, context)
-
-    elif query.data == "end_ai_consultation":
-        return await end_ai_consultation(update, context)
-
-    elif query.data == "settings":
-        await query.message.edit_text(
-            "⚙️ Настройки профиля:",
-            reply_markup=get_settings_menu()
-        )
-    elif query.data == "personal_data":
-        await query.message.edit_text(
-            "📋 Выберите, что хотите изменить:",
-            reply_markup=get_personal_data_menu()
-        )
-    elif query.data == "training_settings":
-        await query.message.edit_text(
-            "🏋️ Настройки тренировок:",
-            reply_markup=get_training_settings_menu()
-        )
-    elif query.data == "show_profile":
-        c.execute("SELECT name, age, weight, height, gender, username "
-                      "FROM UserSettings "
-                      "WHERE user_id = ?",
-                  (user_id,))
-        profile = c.fetchone()
-        if profile:
-            greeting = (
-                f"<b>Ваш профиль:</b>\n"
-                f"👤 Имя: <code>{profile[0] if profile[0] else 'Не указано'}</code>\n"
-                f"Возраст: <code>{profile[1] if profile[1] else 'Не указан'}</code>\n"
-                f"Вес: <code>{profile[2] if profile[2] else 'Не указан'}</code> кг\n"
-                f"Рост: <code>{profile[3] if profile[3] else 'Не указан'}</code> см\n"
-                f"Пол: <code>{profile[4] if profile[4] else 'Не указан'}</code>\n\n"
-                f"📧 Telegram: <code>@{profile[5] if profile[5] else 'Не указан'}</code>"
-            )
+    try:
+        # Устанавливаем флаг активного диалога только если переходим в состояние ввода
+        if query.data in ["set_name", "set_age", "set_weight", "set_height", "set_gender"]:
+            context.user_data['conversation_active'] = True
         else:
-            greeting = "⚠️ Профиль не найден. Пожалуйста, используйте /start для инициализации."
-        await query.message.edit_text(
-            greeting,
-            parse_mode="HTML",
-            reply_markup=get_settings_menu()
-        )
+            context.user_data['conversation_active'] = False
 
-    elif query.data == "main_menu":
+        if query.data == "start_training":
+            await query.message.edit_text(
+                "🏋️‍♂️ Тренировка начата! Следуйте инструкциям или добавьте свои упражнения.",
+                reply_markup=get_main_menu()
+            )
+
+        elif query.data == "my_trainings":
+            await query.message.edit_text(
+                "🗂️ Здесь будут отображаться ваши тренировки (функция в разработке).",
+                reply_markup=get_main_menu()
+            )
+
+        elif query.data == "my_ai_assistant":
+            await query.message.edit_text(
+                "🤖 Воспользоваться AI-консультантом.",
+                reply_markup=get_ai_assistant_menu()
+            )
+
+        elif query.data == "start_ai_assistant":
+            return await start_ai_assistant(update, context)
+
+        elif query.data == "end_ai_consultation":
+            return await end_ai_consultation(update, context)
+
+        elif query.data == "settings":
+            await query.message.edit_text(
+                "⚙️ Настройки профиля:",
+                reply_markup=get_settings_menu()
+            )
+
+        elif query.data == "personal_data":
+            await query.message.edit_text(
+                "📋 Выберите, что хотите изменить:",
+                reply_markup=get_personal_data_menu()
+            )
+
+        elif query.data == "training_settings":
+            await query.message.edit_text(
+                "🏋️ Настройки тренировок:",
+                reply_markup=get_training_settings_menu()
+            )
+
+        elif query.data == "show_profile":
+            c.execute("SELECT name, age, weight, height, gender, username "
+                          "FROM UserSettings "
+                          "WHERE user_id = ?",
+                      (user_id,))
+            profile = c.fetchone()
+            if profile:
+                greeting = (
+                    f"<b>Ваш профиль:</b>\n"
+                    f"👤 Имя: <code>{profile[0] if profile[0] else 'Не указано'}</code>\n"
+                    f"Возраст: <code>{profile[1] if profile[1] else 'Не указан'}</code>\n"
+                    f"Вес: <code>{profile[2] if profile[2] else 'Не указан'}</code> кг\n"
+                    f"Рост: <code>{profile[3] if profile[3] else 'Не указан'}</code> см\n"
+                    f"Пол: <code>{profile[4] if profile[4] else 'Не указан'}</code>\n\n"
+                    f"📧 Telegram: <code>@{profile[5] if profile[5] else 'Не указан'}</code>"
+                )
+            else:
+                greeting = "⚠️ Профиль не найден. Пожалуйста, используйте /start для инициализации."
+            await query.message.edit_text(
+                greeting,
+                parse_mode="HTML",
+                reply_markup=get_settings_menu()
+            )
+
+        elif query.data == "main_menu":
+            await query.message.edit_text(
+                "💪 Выберите действие в меню ниже:",
+                reply_markup=get_main_menu()
+            )
+
+        elif query.data == "set_name":
+            await query.message.edit_text(
+                "✍️ Введите ваше имя:",
+                reply_markup=None
+            )
+
+            logger.info(f"Переход в состояние SET_NAME для пользователя {user_id}")
+            return SET_NAME
+
+        elif query.data == "set_age":
+            await query.message.edit_text(
+                "✍️ Введите ваш возраст (число):",
+                reply_markup=None
+            )
+
+            logger.info(f"Переход в состояние SET_AGE для пользователя {user_id}")
+            return SET_AGE
+
+        elif query.data == "set_weight":
+            await query.message.edit_text(
+                "✍️️ Введите ваш вес в кг (например, 70.5):",
+                reply_markup=None
+            )
+
+            logger.info(f"Переход в состояние SET_WEIGHT для пользователя {user_id}")
+            return SET_WEIGHT
+
+        elif query.data == "set_height":
+            await query.message.edit_text(
+                "✍️ Введите ваш рост в см (например, 175):",
+                reply_markup=None
+            )
+
+            logger.info(f"Переход в состояние SET_HEIGHT для пользователя {user_id}")
+            return SET_HEIGHT
+
+        elif query.data == "set_gender":
+            await query.message.edit_text(
+                "✍️ Введите ваш пол (мужской/женский):",
+                reply_markup=None
+            )
+
+            logger.info(f"Переход в состояние SET_GENDER для пользователя {user_id}")
+            return SET_GENDER
+
+    except Exception as e:
+        logger.error(f"Ошибка в button_callback для пользователя {user_id}: {str(e)}")
         await query.message.edit_text(
-            "💪 Выберите действие в меню ниже:",
+            "❌ Произошла ошибка. Возвращаемся в главное меню.",
             reply_markup=get_main_menu()
         )
+        context.user_data['conversation_active'] = False
+        return ConversationHandler.END
+    finally:
+        conn.close()
 
-    elif query.data == "set_name":
-        await query.message.edit_text(
-            "✍️ Введите ваше имя:",
-            reply_markup=None
-        )
-
-        logger.info(f"Переход в состояние SET_NAME для пользователя {user_id}")
-        return SET_NAME
-
-    elif query.data == "set_age":
-        await query.message.edit_text(
-            "✍️ Введите ваш возраст (число):",
-            reply_markup=None
-        )
-        return SET_AGE
-    elif query.data == "set_weight":
-        await query.message.edit_text(
-            "✍️️ Введите ваш вес в кг (например, 70.5):",
-            reply_markup=None
-        )
-        return SET_WEIGHT
-    elif query.data == "set_height":
-        await query.message.edit_text(
-            "✍️ Введите ваш рост в см (например, 175):",
-            reply_markup=None
-        )
-
-        return SET_HEIGHT
-    elif query.data == "set_gender":
-        await query.message.edit_text(
-            "✍️ Введите ваш пол (мужской/женский):",
-            reply_markup=None
-        )
-
-        return SET_GENDER
-
-    conn.close()
-    return ConversationHandler.END
+    # return ConversationHandler.END

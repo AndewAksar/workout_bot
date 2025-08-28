@@ -91,7 +91,7 @@ def main() -> None:
     init_db()
 
     # Создание объекта приложения Telegram-бота
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(False).build()
 
     # Настройка ConversationHandler для интерактивного редактирования профиля
     conv_handler = ConversationHandler(
@@ -135,7 +135,9 @@ def main() -> None:
         fallbacks=[
             CommandHandler("cancel", cancel)
         ],
-        conversation_timeout=300
+        conversation_timeout=300,
+        per_chat=True,  # Изоляция по чатам
+        per_user=True   # Изоляция по пользователям
     )
 
     ai_conv_handler = ConversationHandler(
@@ -156,6 +158,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("contacts", contact))
     application.add_handler(CommandHandler("settings", settings))
+    # application.add_handler(CommandHandler("cancel", cancel))
     # application.add_handler(CallbackQueryHandler(button_callback))
 
     # Регистрация обработчика для AI-консультации
