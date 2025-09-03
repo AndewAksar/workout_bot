@@ -12,9 +12,6 @@
 - bot.utils.logger: Для настройки логирования.
 - bot.config.settings: Для получения конфигурационных переменных.
 - bot.config.ai_prompt: Для получения системного предпромта.
-
-Автор: Aksarin A.
-Дата создания: 26/08/2025
 """
 
 import requests

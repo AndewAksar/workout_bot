@@ -10,16 +10,18 @@
 - bot.utils.logger: Для настройки логирования.
 - bot.keyboards.main_menu: Для получения клавиатуры главного меню.
 - bot.handlers.ai_api: Для взаимодействия с API GigaChat.
-
-Автор: Aksarin A.
-Дата создания: 26/08/2025
 """
 
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+from telegram.error import TelegramError
 from telegram.ext import (
     ContextTypes,
-    ConversationHandler
+    ConversationHandler,
 )
 
 from bot.utils.logger import setup_logging
@@ -141,31 +143,40 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # Обработчик ошибок для AI
 async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Обработчик ошибок для AI-ассистента.
-    Аргументы:
-        update (telegram.Update): Объект обновления Telegram.
-        context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения.
-    Возвращаемое значение:
-        None
-    """
-    logger.error(f"Ошибка в AI-ассистенте: {context.error}")
-    chat_id = update.effective_chat.id
+    """Обработчик ошибок для AI-ассистента."""
+    error = context.error
+    logger.error(f"Ошибка в AI-ассистенте: {error}")
+
+    if isinstance(error, TelegramError) and "Message is not modified" in str(error):
+        # Игнорируем ошибку "Message is not modified", чтобы не прерывать другие действия
+        logger.debug("Ошибка 'Message is not modified' проигнорирована")
+        return
 
     if update.callback_query:
+        user_id = update.callback_query.from_user.id
+        chat_id = update.callback_query.message.chat_id
         try:
-            message = await update.callback_query.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+            message = await update.callback_query.message.reply_text(
+                "⚠️ Произошла ошибка. Попробуйте снова.",
+                reply_markup = get_main_menu()
+            )
             await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
         except Exception as send_error:
             logger.error(f"Ошибка при отправке сообщения об ошибке: {send_error}")
 
     elif update.message:
+        user_id = update.message.from_user.id
+        chat_id = update.message.chat_id
         try:
-            message = await update.message.reply_text("⚠️ Произошла ошибка (2). Консультация завершена.")
+            message = await update.message.reply_text(
+                "⚠️ Произошла ошибка. Попробуйте снова.",
+                reply_markup = get_main_menu()
+            )
             await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
         except Exception as send_error:
             logger.error(f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}")
 
+    context.user_data['conversation_active'] = False
     return ConversationHandler.END
 
 

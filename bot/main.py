@@ -11,14 +11,14 @@
 - config.settings: Для получения конфигурационных данных (TELEGRAM_TOKEN).
 - utils.logger: Для настройки логирования.
 - handlers.commands: Обработчики команд /start, /help, /contacts.
-- handlers.callbacks: Обработчики callback-запросов и состояний ConversationHandler.
+- handlers.profile_display: Обработчик отображения профиля.
+- handlers.misc_handlers: Обработчики для прочих функций (тренировки, настройки, меню).
+- handlers.set_name, set_age, set_weight, set_height, set_gender: Обработчики ввода данных профиля.
+- ai_assistant.ai_handler: Обработчики для AI-консультанта.
 - database.db_init: Для инициализации базы данных.
 
 Пример использования:
     >>> python bot/main.py
-
-Автор: Aksarin A.
-Дата создания: 19/08/2025
 """
 
 import sys
@@ -44,14 +44,21 @@ from bot.commands.help_command import help
 from bot.commands.contact_command import contact
 from bot.commands.settings_command import settings
 from bot.commands.cancel_command import cancel
-
-from handlers.callbacks import button_callback
+from bot.handlers.profile_display import show_profile
+from bot.handlers.misc_handlers import (
+    start_training,
+    show_trainings,
+    show_settings,
+    show_personal_data_menu,
+    show_training_settings,
+    return_to_main_menu
+)
 from handlers.set_age import set_age
 from handlers.set_weight import set_weight
 from handlers.set_height import set_height
 from handlers.set_gender import set_gender
 from bot.handlers.set_name import set_name
-from handlers.callbacks import (
+from bot.config.settings import (
     SET_NAME,
     SET_AGE,
     SET_WEIGHT,
@@ -65,25 +72,34 @@ from bot.ai_assistant.ai_handler import (
     ai_error_handler,
     AI_CONSULTATION
 )
+from bot.handlers.callbacks import (
+    set_name_callback,
+    set_age_callback,
+    set_weight_callback,
+    set_height_callback,
+    set_gender_callback
+)
 from bot.database.db_init import init_db
 
 
 # Инициализация логгера для записи событий и ошибок
 logger = setup_logging()
 
+
+
 def main() -> None:
     """
-        Основная функция для запуска Telegram-бота.
-        Описание:
-            Инициализирует базу данных, создает объект приложения Telegram-бота,
-            настраивает обработчики команд и callback-запросов, а также запускает
-            процесс polling для обработки входящих обновлений.
-        Аргументы: Нет
-        Возвращаемое значение: None
-        Исключения:
-            - RuntimeError: Если TELEGRAM_TOKEN не задан или недоступен.
-            - Exception: Общие ошибки, связанные с инициализацией базы данных или запуском бота.
-        Пример использования:
+    Основная функция для запуска Telegram-бота.
+    Описание:
+        Инициализирует базу данных, создает объект приложения Telegram-бота,
+        настраивает обработчики команд и callback-запросов, а также запускает
+        процесс polling для обработки входящих обновлений.
+    Аргументы: Нет
+    Возвращаемое значение: None
+    Исключения:
+        - RuntimeError: Если TELEGRAM_TOKEN не задан или недоступен.
+        - Exception: Общие ошибки, связанные с инициализацией базы данных или запуском бота.
+    Пример использования:
         >>> main()
         [Бот запускается, начинает обработку входящих сообщений]
     """
@@ -96,40 +112,35 @@ def main() -> None:
     # Настройка ConversationHandler для интерактивного редактирования профиля
     conv_handler = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(
-                button_callback
-            )
+            CallbackQueryHandler(show_profile, pattern='^show_profile$'),
+            CallbackQueryHandler(start_training, pattern='^start_training$'),
+            CallbackQueryHandler(show_trainings, pattern='^my_trainings$'),
+            CallbackQueryHandler(start_ai_assistant, pattern='^my_ai_assistant$'),
+            CallbackQueryHandler(show_settings, pattern='^settings$'),
+            CallbackQueryHandler(show_personal_data_menu, pattern='^personal_data$'),
+            CallbackQueryHandler(show_training_settings, pattern='^training_settings$'),
+            CallbackQueryHandler(return_to_main_menu, pattern='^main_menu$'),
+            CallbackQueryHandler(set_name_callback, pattern='^set_name$'),
+            CallbackQueryHandler(set_age_callback, pattern='^set_age$'),
+            CallbackQueryHandler(set_weight_callback, pattern='^set_weight$'),
+            CallbackQueryHandler(set_height_callback, pattern='^set_height$'),
+            CallbackQueryHandler(set_gender_callback, pattern='^set_gender$'),
         ],
         states={
             SET_NAME: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    set_name
-                )
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)
             ],
             SET_AGE: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    set_age
-                )
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_age)
             ],
             SET_WEIGHT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    set_weight
-                )
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_weight)
             ],
             SET_HEIGHT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    set_height
-                )
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_height)
             ],
             SET_GENDER: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    set_gender
-                )
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_gender)
             ],
         },
         fallbacks=[
@@ -158,8 +169,6 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("contacts", contact))
     application.add_handler(CommandHandler("settings", settings))
-    # application.add_handler(CommandHandler("cancel", cancel))
-    # application.add_handler(CallbackQueryHandler(button_callback))
 
     # Регистрация обработчика для AI-консультации
     application.add_handler(ai_conv_handler)

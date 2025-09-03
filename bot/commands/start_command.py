@@ -10,9 +10,6 @@
 - bot.config.settings: Для получения конфигурационных данных (WELCOME_MESSAGE).
 - bot.keyboards.main_menu: Для генерации главного меню.
 - bot.utils.message_deletion: Для планирования удаления сообщений.
-
-Автор: Aksarin A.
-Дата создания: 22/08/2025
 """
 
 import sqlite3

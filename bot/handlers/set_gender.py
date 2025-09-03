@@ -12,9 +12,6 @@
 - bot.keyboards.training_settings_menu: Для получения меню настроек тренировок.
 - bot.keyboards.settings_menu: Для получения меню настроек.
 - bot.utils.logger: Для настройки логирования.
-
-Автор: Aksarin A.
-Дата создания: 21/08/2025
 """
 
 import os
@@ -25,8 +22,10 @@ from telegram.ext import (
     ConversationHandler
 )
 
-from bot.handlers.callbacks import SET_GENDER
-from bot.config.settings import DB_PATH
+from bot.config.settings import (
+    DB_PATH,
+    SET_GENDER
+)
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
 

@@ -11,10 +11,8 @@
 - bot.keyboards.personal_data_menu: Для получения меню личных данных.
 - bot.keyboards.training_settings_menu: Для получения меню настроек тренировок.
 - bot.keyboards.settings_menu: Для получения меню настроек.
+- bot.utils.message_deletion: Для планирования удаления сообщений.
 - bot.utils.logger: Для настройки логирования.
-
-Автор: Aksarin A.
-Дата создания: 21/08/2025
 """
 
 import sqlite3
@@ -26,6 +24,7 @@ from telegram.ext import (
 
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
+from bot.utils.message_deletion import schedule_message_deletion
 from bot.config.settings import DB_PATH
 
 
@@ -34,30 +33,30 @@ logger = setup_logging()
 async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Обработчик ввода возраста пользователя.
-
     Описание:
         Проверяет корректность введенного возраста (целое число от 0 до 150),
         сохраняет его в базе данных и возвращает меню личных данных.
         При некорректном вводе отправляет сообщение об ошибке.
-
     Аргументы:
         update (telegram.Update): Объект обновления, содержащий введенное сообщение.
         context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
     Возвращаемое значение:
         int: ConversationHandler.END, завершающий диалог.
-
     Исключения:
         - ValueError: Если введено некорректное значение возраста.
         - sqlite3.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
     Пример использования:
-        Пользователь вводит возраст, бот сохраняет его или запрашивает корректный ввод.
+        Пользователь вводит возраст, бот сохраняет его или запрашивает корректный ввод,
+        отправляет подтверждение и планирует удаление сообщения пользователя.
     """
     user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
+    user_message_id = update.message.message_id
+    age = int(update.message.text.strip())
+
+    logger.info(f"Начало обработки ввода имени для пользователя {user_id}: {age}")
     try:
-        age = int(update.message.text.strip())
         if age < 0 or age > 150:
             raise ValueError("Некорректный возраст")
         conn = sqlite3.connect(DB_PATH)
@@ -68,6 +67,13 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(
             f"✅ Возраст обновлен: {age}",
             reply_markup=get_personal_data_menu()
+        )
+        logger.info(f"Сообщение об успешном обновлении имени отправлено пользователю {user_id}")
+        await schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=5
         )
     except ValueError:
         await update.message.reply_text(
