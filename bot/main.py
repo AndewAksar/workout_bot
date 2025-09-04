@@ -109,13 +109,14 @@ def main() -> None:
     # Создание объекта приложения Telegram-бота
     application = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(False).build()
 
-    # Настройка ConversationHandler для интерактивного редактирования профиля
+    # Настройка ConversationHandler для интерактивного редактирования профиля и вызова AI-консультанта
     conv_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(show_profile, pattern='^show_profile$'),
             CallbackQueryHandler(start_training, pattern='^start_training$'),
             CallbackQueryHandler(show_trainings, pattern='^my_trainings$'),
             CallbackQueryHandler(start_ai_assistant, pattern='^my_ai_assistant$'),
+            CallbackQueryHandler(start_ai_assistant, pattern='^start_ai_assistant$'),
             CallbackQueryHandler(show_settings, pattern='^settings$'),
             CallbackQueryHandler(show_personal_data_menu, pattern='^personal_data$'),
             CallbackQueryHandler(show_training_settings, pattern='^training_settings$'),
@@ -127,20 +128,14 @@ def main() -> None:
             CallbackQueryHandler(set_gender_callback, pattern='^set_gender$'),
         ],
         states={
-            SET_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)
-            ],
-            SET_AGE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, set_age)
-            ],
-            SET_WEIGHT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, set_weight)
-            ],
-            SET_HEIGHT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, set_height)
-            ],
-            SET_GENDER: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, set_gender)
+            SET_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)],
+            SET_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_age)],
+            SET_WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_weight)],
+            SET_HEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_height)],
+            SET_GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_gender)],
+            AI_CONSULTATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
+                CallbackQueryHandler(end_ai_consultation, pattern='^end_ai_consultation$'),
             ],
         },
         fallbacks=[
@@ -151,19 +146,6 @@ def main() -> None:
         per_user=True   # Изоляция по пользователям
     )
 
-    ai_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_ai_assistant, pattern='^start_ai_assistant$')],
-        states={
-            AI_CONSULTATION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
-                CallbackQueryHandler(end_ai_consultation, pattern='^end_ai_consultation$')
-            ],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],  # Если есть команда /cancel
-        per_chat=True,
-        per_user=True
-    )
-
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help))
@@ -171,7 +153,6 @@ def main() -> None:
     application.add_handler(CommandHandler("settings", settings))
 
     # Регистрация обработчика для AI-консультации
-    application.add_handler(ai_conv_handler)
     application.add_error_handler(ai_error_handler)
 
     # Регистрация обработчика ConversationHandler для обработки состояний

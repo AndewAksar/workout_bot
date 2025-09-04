@@ -56,6 +56,16 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     age = int(update.message.text.strip())
 
     logger.info(f"Начало обработки ввода имени для пользователя {user_id}: {age}")
+
+    # Проверяем, что бот находится в состоянии SET_AGE
+    if context.user_data.get('current_state') != 'SET_AGE':
+        logger.warning(f"Некорректное состояние для set_age: {context.user_data.get('current_state')}")
+        await update.message.reply_text(
+            "⚠️ Пожалуйста, используйте команду для изменения возраста через меню настроек.",
+            reply_markup=get_personal_data_menu()
+        )
+        return ConversationHandler.END
+
     try:
         if age < 0 or age > 150:
             raise ValueError("Некорректный возраст")
@@ -68,7 +78,7 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"✅ Возраст обновлен: {age}",
             reply_markup=get_personal_data_menu()
         )
-        logger.info(f"Сообщение об успешном обновлении имени отправлено пользователю {user_id}")
+        logger.info(f"Сообщение об успешном обновлении возраста отправлено пользователю {user_id}")
         await schedule_message_deletion(
             context,
             [user_message_id],
@@ -80,4 +90,6 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "⚠️ Пожалуйста, введите корректное число для возраста.",
             reply_markup=get_personal_data_menu()
         )
+
+    context.user_data.pop('current_state', None)
     return ConversationHandler.END

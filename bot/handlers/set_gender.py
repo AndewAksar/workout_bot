@@ -28,6 +28,7 @@ from bot.config.settings import (
 )
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
+from bot.utils.message_deletion import schedule_message_deletion
 
 logger = setup_logging()
 
@@ -51,6 +52,8 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("Функция set_gender вызвана")
 
     user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
+    user_message_id = update.message.message_id
     gender = update.message.text.strip()
 
     logger.info(f"Начало обработки ввода пола пользователя {user_id}: {gender}")
@@ -81,6 +84,13 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "✅ Пол успешно обновлён!",
                 reply_markup=get_personal_data_menu()
             )
+            logger.info(f"Сообщение об успешном обновлении пола отправлено пользователю {user_id}")
+            await schedule_message_deletion(
+                context,
+                [user_message_id],
+                chat_id,
+                delay=5
+            )
             conn.close()
             return ConversationHandler.END
         else:
@@ -104,6 +114,8 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "❌ Произошла неизвестная ошибка. Попробуйте снова.",
             reply_markup=get_personal_data_menu()
         )
-        return ConversationHandler.END
+
+    context.user_data.pop('current_state', None)
+    return ConversationHandler.END
 
 

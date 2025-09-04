@@ -27,6 +27,7 @@ from telegram.ext import (
 
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
+from bot.utils.message_deletion import schedule_message_deletion
 from bot.config.settings import DB_PATH
 
 
@@ -57,6 +58,8 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         Пользователь вводит вес, бот сохраняет его или запрашивает корректный ввод.
     """
     user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
+    user_message_id = update.message.message_id
     weight = float(update.message.text.strip())
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.db')
 
@@ -88,6 +91,13 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"✅ Вес обновлен: {weight} кг",
             reply_markup=get_personal_data_menu()
         )
+        logger.info(f"Сообщение об успешном обновлении веса отправлено пользователю {user_id}")
+        await schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=5
+        )
         conn.close()
         return ConversationHandler.END
     except ValueError:
@@ -103,4 +113,6 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             reply_markup=get_personal_data_menu()
         )
         conn.close()
-        return ConversationHandler.END
+
+    context.user_data.pop('current_state', None)
+    return ConversationHandler.END

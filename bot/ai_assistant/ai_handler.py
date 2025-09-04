@@ -28,12 +28,10 @@ from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
 from bot.ai_assistant.ai_api import generate_gigachat_response
 from bot.utils.message_deletion import schedule_message_deletion
+from bot.config.settings import AI_CONSULTATION
 
 
 logger = setup_logging()
-
-# Состояния для ConversationHandler
-AI_CONSULTATION = 1
 
 # Глобальная переменная для хранения токена
 GIGACHAT_AUTH_TOKEN = None
@@ -58,6 +56,7 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Устанавливаем флаг активного диалога
     context.user_data['conversation_active'] = True
+    context.user_data['current_state'] = 'AI_CONSULTATION'
 
     # Клавиатура с кнопкой выхода
     exit_keyboard = InlineKeyboardMarkup([
@@ -85,6 +84,15 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     logger.info(f"Пользователь {user_id} спросил AI: {user_message}")
+
+    # Проверяем, что бот находится в состоянии AI_CONSULTATION
+    if context.user_data.get('current_state') != 'AI_CONSULTATION':
+        logger.warning(f"Некорректное состояние для handle_ai_message: {context.user_data.get('current_state')}")
+        await update.message.reply_text(
+            "⚠️ Пожалуйста, начните консультацию с AI заново.",
+            reply_markup=get_main_menu()
+        )
+        return ConversationHandler.END
 
     try:
         response = generate_gigachat_response(user_message, user_id)

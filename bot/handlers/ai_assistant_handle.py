@@ -38,7 +38,8 @@ async def handle_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE
         "🤖 Воспользоваться AI-консультантом.",
         reply_markup=get_ai_assistant_menu()
     )
-    return ConversationHandler.END
+    # Передаем управление в start_ai_assistant для входа в AI_CONSULTATION
+    return await start_ai_assistant(update, context)
 
 async def start_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запускает AI-ассистента."""

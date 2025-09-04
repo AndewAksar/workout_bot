@@ -122,4 +122,5 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     logger.debug(f"Завершение обработки ввода имени для пользователя {user_id}")
     context.user_data['conversation_active'] = False
+    context.user_data.pop('current_state', None)
     return ConversationHandler.END

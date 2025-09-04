@@ -59,7 +59,10 @@ async def set_age_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "✍️ Введите ваш возраст (число):",
         reply_markup=None
     )
+
     context.user_data['conversation_active'] = True
+    context.user_data['current_state'] = 'SET_AGE'
+
     await schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
     return SET_AGE
 
