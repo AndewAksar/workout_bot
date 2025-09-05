@@ -9,7 +9,8 @@
 - telegram.ext: Для работы с контекстом, обработчиками и ConversationHandler.
 - bot.utils.logger: Для настройки логирования.
 - bot.keyboards.main_menu: Для получения клавиатуры главного меню.
-- bot.handlers.ai_api: Для взаимодействия с API GigaChat.
+- bot.ai_assistant.ai_api: Для взаимодействия с API GigaChat.
+- bot.ai_assistant.ai_prompt: Для получения системного промпта.
 """
 
 import logging
@@ -26,7 +27,11 @@ from telegram.ext import (
 
 from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
-from bot.ai_assistant.ai_api import generate_gigachat_response
+from bot.ai_assistant.ai_api import (
+    generate_gigachat_response,
+    get_user_settings
+)
+from bot.ai_assistant.ai_prompt import get_system_prompt
 from bot.utils.message_deletion import schedule_message_deletion
 from bot.config.settings import AI_CONSULTATION
 
@@ -54,20 +59,25 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} начал консультацию с AI-ассистентом.")
 
-    # Устанавливаем флаг активного диалога
+    # Устанавливаем флаг активного диалога и инициализируем историю
     context.user_data['conversation_active'] = True
     context.user_data['current_state'] = 'AI_CONSULTATION'
+    context.user_data['ai_history'] = []  # Инициализация истории диалога
 
     # Клавиатура с кнопкой выхода
     exit_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🚪 Завершить консультацию", callback_data='end_ai_consultation')]
     ])
 
-    await query.message.edit_text(
+    # Отправляем сообщение и сохраняем его ID
+    message = await query.message.edit_text(
         "🤖 AI-консультант готов! Задайте свой вопрос по тренировкам, питанию или мотивации.\n\n"
         "Чтобы завершить, нажмите кнопку ниже.",
         reply_markup=exit_keyboard
     )
+    context.user_data['start_ai_message_id'] = message.message_id
+    logger.debug(f"Сохранён message_id начального сообщения: {message.message_id}")
+
     return AI_CONSULTATION
 
 # Обработчик сообщений во время консультации
@@ -94,25 +104,100 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return ConversationHandler.END
 
+    # Клавиатура с кнопкой завершения консультации
+    exit_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚪 Завершить консультацию", callback_data='end_ai_consultation')]
+        ])
+
     try:
-        response = generate_gigachat_response(user_message, user_id)
+        # Получаем данные пользователя из БД
+        settings = get_user_settings(user_id)
+        user_data_str = ""
+        if settings:
+            user_data_str = "\nДанные пользователя:\n"
+            for key, value in settings.items():
+                if value is not None:
+                    user_data_str += f"{key.capitalize()}: {value}\n"
+
+        # Формируем системный промпт
+        system_prompt = get_system_prompt() + user_data_str
+
+        # Добавляем сообщение пользователя в историю
+        context.user_data['ai_history'].append({"role": "user", "content": user_message})
+
+        # Формируем полный список сообщений для API
+        messages = [{"role": "system", "content": system_prompt}] + context.user_data['ai_history']
+
+        # Получаем ответ от API
+        response = generate_gigachat_response(messages)
         logger.debug(f"Длина ответа от GigaChat: {len(response)} символов")
+
+        # Добавляем ответ assistant в историю
+        context.user_data['ai_history'].append({"role": "assistant", "content": response})
+
+        # Удаляем клавиатуру из начального сообщения (если ещё не удалена)
+        start_message_id = context.user_data.get('start_ai_message_id')
+        if start_message_id and not context.user_data.get('start_keyboard_removed', False):
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=start_message_id,
+                    reply_markup=None
+                )
+                logger.debug(f"Клавиатура удалена из начального сообщения {start_message_id}")
+                context.user_data['start_keyboard_removed'] = True
+            except Exception as e:
+                logger.error(f"Ошибка при удалении клавиатуры из начального сообщения {start_message_id}: {e}")
+
+        # Удаляем клавиатуру из предыдущего ответа ИИ
+        last_ai_response_id = context.user_data.get('last_ai_response_id')
+        if last_ai_response_id:
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=last_ai_response_id,
+                    reply_markup=None
+                )
+                logger.debug(f"Клавиатура удалена из предыдущего ответа ИИ {last_ai_response_id}")
+            except Exception as e:
+                logger.error(f"Ошибка при удалении клавиатуры из предыдущего ответа ИИ {last_ai_response_id}: {e}")
 
         # Разделяем ответ, если он превышает лимит Telegram
         if len(response) <= MAX_MESSAGE_LENGTH:
-            sent_message = await update.message.reply_text(response)
+            sent_message = await update.message.reply_text(response, reply_markup=exit_keyboard)
+            context.user_data['last_ai_response_id'] = sent_message.message_id  # Сохраняем ID последнего ответа
+            logger.debug(f"Сохранён last_ai_response_id: {sent_message.message_id}")
         else:
             # Разбиваем текст на части по MAX_MESSAGE_LENGTH
             messages = []
-            for i in range(0, len(response), MAX_MESSAGE_LENGTH):
-                part = response[i:i + MAX_MESSAGE_LENGTH]
-                # Убедимся, что часть заканчивается на полном предложении, если возможно
-                if i + MAX_MESSAGE_LENGTH < len(response):
-                    last_period = part.rfind('.')
-                    if last_period != -1:
-                        part = part[:last_period + 1]
-                sent_message = await update.message.reply_text(part)
-                messages.append(sent_message.message_id)
+            start = 0
+            while start < len(response):
+                # Определяем конец текущей части
+                end = min(start + MAX_MESSAGE_LENGTH, len(response))
+                # Проверяем, не начинается ли следующая часть с пробела или в середине слова
+                if end < len(response):
+                    # Ищем ближайший пробел или конец предложения для корректной обрезки
+                    while end > start and response[end - 1] not in [' ', '\n', '.']:
+                        end -= 1
+                    # Если не нашли подходящий разделитель, используем MAX_MESSAGE_LENGTH
+                    if end == start:
+                        end = start + MAX_MESSAGE_LENGTH
+                part = response[start:end]
+                # Убедимся, что часть не пустая
+                if part.strip():
+                    is_last_part = end >= len(response)
+                    sent_message = await update.message.reply_text(
+                        part,
+                        reply_markup=exit_keyboard if is_last_part else None
+                    )
+                    messages.append(sent_message.message_id)
+                start = end
+                # Пропускаем пробелы или переносы строк в начале следующей части
+                while start < len(response) and response[start] in [' ', '\n']:
+                    start += 1
+            if messages:
+                context.user_data['last_ai_response_id'] = messages[-1]  # Сохраняем ID последнего сообщения с клавиатурой
+                logger.debug(f"Сохранён last_ai_response_id для разбитого ответа: {messages[-1]}")
 
         return AI_CONSULTATION  # Остаемся в состоянии для продолжения диалога
     except Exception as e:
@@ -121,7 +206,6 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         # Сбрасываем флаг диалога
         context.user_data['conversation_active'] = False
-
         return ConversationHandler.END
 
 # Обработчик завершения консультации (по callback_data='end_ai_consultation')
@@ -139,13 +223,29 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} завершил консультацию с AI-ассистентом.")
 
-    await query.message.edit_text(
+    # Удаляем клавиатуру "Завершить консультацию" из последнего сообщения
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+        logger.debug(f"Клавиатура удалена из сообщения {query.message.message_id} для пользователя {user_id}")
+    except Exception as e:
+        logger.error(f"Ошибка при удалении клавиатуры из сообщения {query.message.message_id}: {e}")
+
+    # Отправляем новое сообщение с главным меню
+    await query.message.reply_text(
         "🤖 Консультация завершена. Возвращаемся в главное меню.",
         reply_markup=get_main_menu()
     )
 
-    # Сбрасываем флаг диалога
+    # Сбрасываем флаг диалога и очищаем историю
     context.user_data['conversation_active'] = False
+    if 'ai_history' in context.user_data:
+        del context.user_data['ai_history']
+    if 'start_ai_message_id' in context.user_data:
+        del context.user_data['start_ai_message_id']
+    if 'last_ai_response_id' in context.user_data:
+        del context.user_data['last_ai_response_id']
+    if 'start_keyboard_removed' in context.user_data:
+        del context.user_data['start_keyboard_removed']
 
     return ConversationHandler.END
 
@@ -185,6 +285,13 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             logger.error(f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}")
 
     context.user_data['conversation_active'] = False
+    if 'ai_history' in context.user_data:
+        del context.user_data['ai_history']
+    if 'start_ai_message_id' in context.user_data:
+        del context.user_data['start_ai_message_id']
+    if 'last_ai_response_id' in context.user_data:
+        del context.user_data['last_ai_response_id']
+    if 'start_keyboard_removed' in context.user_data:
+        del context.user_data['start_keyboard_removed']
+
     return ConversationHandler.END
-
-

@@ -109,17 +109,14 @@ def get_user_settings(user_id: int) -> dict:
             conn.close()
 
 def generate_gigachat_response(
-        prompt: str,
-        user_id: int,
+        messages: list,
         retries: int = 3,
         delay: float = 2.0
 ) -> str:
     """
-    Генерирует ответ от GigaChat API на основе пользовательского запроса.
-    Автоматически добавляет данные пользователя из БД в системный промпт.
+    Генерирует ответ от GigaChat API на основе списка сообщений.
     Аргументы:
-        prompt (str): Текст пользовательского запроса.
-        user_id (int): Идентификатор пользователя в Telegram для получения данных из БД.
+        messages (list): Список сообщений в формате [{'role': 'system/user/assistant', 'content': 'text'}].
         retries (int): Количество повторных попыток при ошибке API (по умолчанию 3).
         delay (float): Задержка в секундах между повторными попытками (по умолчанию 2.0).
     Возвращаемое значение:
@@ -131,20 +128,6 @@ def generate_gigachat_response(
     if not GIGACHAT_AUTH_TOKEN:
         get_gigachat_token()
 
-    # Получаем данные пользователя из БД
-    settings = get_user_settings(user_id)
-
-    # Формируем дополнение к системному промпту с данными пользователя
-    user_data_str = ""
-    if settings:
-        user_data_str = "\nДанные пользователя:\n"
-        for key, value in settings.items():
-            if value is not None:
-                user_data_str += f"{key.capitalize()}: {value}\n"
-
-    # Обновляем системный промпт
-    system_prompt = get_system_prompt() + user_data_str
-
     headers = {
         'Authorization': f'Bearer {GIGACHAT_AUTH_TOKEN}',
         'Content-Type': 'application/json',
@@ -152,10 +135,18 @@ def generate_gigachat_response(
     }
     data = {
         "model": "GigaChat",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": messages,
+        "max_tokens": 2500,
+        "temperature": 0.7
+    }
+    headers = {
+        'Authorization': f'Bearer {GIGACHAT_AUTH_TOKEN}',
+        'Content-Type': 'application/json',
+        'RqUID': str(uuid.uuid4())
+    }
+    data = {
+        "model": "GigaChat",
+        "messages": messages,
         "max_tokens": 2500,
         "temperature": 0.7
     }

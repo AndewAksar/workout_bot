@@ -32,7 +32,7 @@ async def handle_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    logger.info(f"Пользователь {user_id} запросил AI-ассистента")
+    logger.info(f"Пользователь {user_id} завершил консультацию с AI-ассистентом.")
 
     await query.message.edit_text(
         "🤖 Воспользоваться AI-консультантом.",
