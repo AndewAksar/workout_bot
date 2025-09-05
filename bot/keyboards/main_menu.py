@@ -1,11 +1,60 @@
 # bot/keyboards/main_menu.py
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+"""
+Модуль: main_menu.py
+Описание: Модуль содержит функции для создания интерактивных клавиатур Telegram-бота,
+используемых в главном меню и меню настроек. Клавиатуры создаются с использованием
+InlineKeyboardButton и InlineKeyboardMarkup из библиотеки python-telegram-bot.
+
+Зависимости:
+- telegram: Для создания интерактивных кнопок и клавиатур (InlineKeyboardButton, InlineKeyboardMarkup).
+
+"""
+
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
 
 
 def get_main_menu():
+    """
+        Создает главное меню бота.
+
+        Описание:
+            Формирует интерактивную клавиатуру с кнопками для основных функций бота:
+            начать тренировку, просмотр тренировок, вызов AI-консультанта и доступ к настройкам.
+
+        Аргументы:
+            Нет
+
+        Возвращаемое значение:
+            InlineKeyboardMarkup: Объект клавиатуры с четырьмя кнопками для главного меню.
+
+        Пример использования:
+            >>> keyboard = get_main_menu()
+            [Возвращается InlineKeyboardMarkup с кнопками главного меню]
+    """
+
     keyboard = [
-        [InlineKeyboardButton("🏋️‍♂️ Начать тренировку", callback_data='start_training')],
-        [InlineKeyboardButton("🗂️ Мои тренировки", callback_data='my_trainings')],
-        [InlineKeyboardButton("⚙️ Настройки", callback_data='settings')]
+        [
+            InlineKeyboardButton(
+                "🏋️‍♂️ Начать тренировку", callback_data='start_training'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🗂️ Мои тренировки", callback_data='my_trainings'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🤖 AI-консультант", callback_data='my_ai_assistant'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "⚙️ Настройки", callback_data='settings'
+            )
+        ]
     ]
     return InlineKeyboardMarkup(keyboard)
