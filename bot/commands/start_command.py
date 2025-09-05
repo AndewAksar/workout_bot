@@ -66,8 +66,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             init_db()
 
         # Проверка, существует ли пользователь
-        c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
-        if not c.fetchone():
+        c.execute("SELECT name FROM UserSettings WHERE user_id = ?", (user_id,))
+        existing_user = c.fetchone()
+
+        if not existing_user:
             # Создание новой записи для нового пользователя
             c.execute(
                 "INSERT INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
@@ -75,12 +77,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             logger.info(f"Создана новая запись для пользователя {user_id} (@{username})")
         else:
-            # Обновление username и name, если пользователь уже существует
+            # Обновление только username для существующего пользователя
             c.execute(
-                "UPDATE UserSettings SET username = ?, name = ? WHERE user_id = ?",
-                (username, first_name, user_id)
+                "UPDATE UserSettings SET username = ? WHERE user_id = ?",
+                (username, user_id)
             )
-            logger.info(f"Обновлены данные username и name для пользователя {user_id} (@{username})")
+            logger.info(f"Обновлены данные username для пользователя {user_id} (@{username})")
 
         conn.commit()
 
