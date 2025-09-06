@@ -60,47 +60,45 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     try:
         logger.info(f"Подключение к базе данных: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
 
-        # Проверка существования таблицы
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
-        if not c.fetchone():
-            logger.error("Таблица UserSettings не существует, вызываем init_db")
-            from bot.database.db_init import init_db
-            init_db()
+            # Проверка существования таблицы
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
+            if not c.fetchone():
+                logger.error("Таблица UserSettings не существует, вызываем init_db")
+                from bot.database.db_init import init_db
+                init_db()
 
-        # Проверка существования пользователя
-        c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
-        if not c.fetchone():
-            c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
-            conn.commit()
+            # Проверка существования пользователя
+            c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
+            if not c.fetchone():
+                c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
+                conn.commit()
 
-        if gender.lower() in ["мужской", "женский"]:
-            c.execute("UPDATE UserSettings SET gender = ? WHERE user_id = ?", (gender.lower(), user_id))
-            conn.commit()
-            logger.info(f"Пол успешно обновлён для пользователя {user_id}: {gender}")
-            await update.message.reply_text(
-                "✅ Пол успешно обновлён!",
-                reply_markup=get_personal_data_menu()
-            )
-            logger.info(f"Сообщение об успешном обновлении пола отправлено пользователю {user_id}")
-            await schedule_message_deletion(
-                context,
-                [user_message_id],
-                chat_id,
-                delay=5
-            )
-            conn.close()
-            return ConversationHandler.END
-        else:
-            logger.warning(f"Пользователь {user_id} отправил некорректные данные: {gender}")
-            await update.message.reply_text(
-                "⚠️ Пожалуйста, введите корректные данные (мужской/женский):",
-                reply_markup=None
-            )
-            conn.close()
-            return SET_GENDER
+            if gender.lower() in ["мужской", "женский"]:
+                c.execute("UPDATE UserSettings SET gender = ? WHERE user_id = ?", (gender.lower(), user_id))
+                conn.commit()
+                logger.info(f"Пол успешно обновлён для пользователя {user_id}: {gender}")
+                await update.message.reply_text(
+                    "✅ Пол успешно обновлён!",
+                    reply_markup=get_personal_data_menu()
+                )
+                logger.info(f"Сообщение об успешном обновлении пола отправлено пользователю {user_id}")
+                await schedule_message_deletion(
+                    context,
+                    [user_message_id],
+                    chat_id,
+                    delay=5
+                )
+                return ConversationHandler.END
+            else:
+                logger.warning(f"Пользователь {user_id} отправил некорректные данные: {gender}")
+                await update.message.reply_text(
+                    "⚠️ Пожалуйста, введите корректные данные (мужской/женский):",
+                    reply_markup=None
+                )
+                return SET_GENDER
     except sqlite3.Error as e:
         logger.error(f"Ошибка базы данных для пользователя {user_id}: {e}")
         await update.message.reply_text(
@@ -117,5 +115,4 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data.pop('current_state', None)
     return ConversationHandler.END
-
 

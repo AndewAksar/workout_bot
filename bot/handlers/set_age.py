@@ -53,9 +53,17 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.message.from_user.id
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
-    age = int(update.message.text.strip())
 
-    logger.info(f"Начало обработки ввода имени для пользователя {user_id}: {age}")
+    try:
+        age = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Пожалуйста, введите корректное число для возраста.",
+            reply_markup=get_personal_data_menu()
+        )
+        return ConversationHandler.END
+
+    logger.info(f"Начало обработки ввода возраста для пользователя {user_id}: {age}")
 
     # Проверяем, что бот находится в состоянии SET_AGE
     if context.user_data.get('current_state') != 'SET_AGE':
@@ -69,11 +77,10 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         if age < 0 or age > 150:
             raise ValueError("Некорректный возраст")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET age = ? WHERE user_id = ?", (age, user_id))
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("UPDATE UserSettings SET age = ? WHERE user_id = ?", (age, user_id))
+            conn.commit()
         await update.message.reply_text(
             f"✅ Возраст обновлен: {age}",
             reply_markup=get_personal_data_menu()

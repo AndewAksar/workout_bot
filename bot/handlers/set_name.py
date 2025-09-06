@@ -70,16 +70,16 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return SET_NAME
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
-        if not c.fetchone():
-            c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
+            if not c.fetchone():
+                c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
+                conn.commit()
+                logger.info(f"Создана новая запись для пользователя {user_id}")
+            c.execute("UPDATE UserSettings SET name = ? WHERE user_id = ?", (name, user_id))
             conn.commit()
-            logger.info(f"Создана новая запись для пользователя {user_id}")
-        c.execute("UPDATE UserSettings SET name = ? WHERE user_id = ?", (name, user_id))
-        conn.commit()
-        logger.info(f"Имя успешно обновлено для пользователя {user_id}: {name}")
+            logger.info(f"Имя успешно обновлено для пользователя {user_id}: {name}")
     except sqlite3.Error as e:
         logger.error(f"Ошибка базы данных при обновлении имени для пользователя {user_id}: {str(e)}")
         error_message = await update.message.reply_text(
@@ -92,16 +92,14 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             chat_id,
             delay=5
         )
-        conn.close()
         context.user_data['conversation_active'] = False
         return ConversationHandler.END
     except Exception as e:
         logger.error(f"Ошибка при обработке ввода имени для пользователя {user_id}: {str(e)}")
-        conn.close()
         context.user_data['conversation_active'] = False
         return ConversationHandler.END
     finally:
-        conn.close()
+        logger.debug(f"Сеанс обновления имени завершён для пользователя {user_id}")
 
     try:
         await update.message.reply_text(

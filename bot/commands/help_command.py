@@ -11,10 +11,6 @@
 
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
 
 from bot.utils.message_deletion import schedule_message_deletion
 from bot.utils.logger import setup_logging
@@ -55,5 +51,4 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "❌ Произошла ошибка. Попробуйте снова позже.",
             parse_mode="HTML"
-
         )

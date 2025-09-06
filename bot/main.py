@@ -37,12 +37,12 @@ from telegram.ext import (
     filters
 )
 
-from config.settings import TELEGRAM_TOKEN
-from utils.logger import setup_logging
+from bot.config.settings import TELEGRAM_TOKEN
+from bot.utils.logger import setup_logging
 from bot.commands.start_command import start
-from bot.commands.help_command import help
+from bot.commands.help_command import help as help_command
 from bot.commands.contact_command import contact
-from bot.commands.settings_command import settings
+from bot.commands.settings_command import settings as settings_command
 from bot.commands.cancel_command import cancel
 from bot.handlers.profile_display import show_profile
 from bot.handlers.misc_handlers import (
@@ -53,24 +53,24 @@ from bot.handlers.misc_handlers import (
     show_training_settings,
     return_to_main_menu
 )
-from handlers.set_age import set_age
-from handlers.set_weight import set_weight
-from handlers.set_height import set_height
-from handlers.set_gender import set_gender
+from bot.handlers.set_age import set_age
+from bot.handlers.set_weight import set_weight
+from bot.handlers.set_height import set_height
+from bot.handlers.set_gender import set_gender
 from bot.handlers.set_name import set_name
 from bot.config.settings import (
     SET_NAME,
     SET_AGE,
     SET_WEIGHT,
     SET_HEIGHT,
-    SET_GENDER
+    SET_GENDER,
+    AI_CONSULTATION
 )
 from bot.ai_assistant.ai_handler import (
     start_ai_assistant,
     handle_ai_message,
     end_ai_consultation,
     ai_error_handler,
-    AI_CONSULTATION
 )
 from bot.handlers.callbacks import (
     set_name_callback,
@@ -103,6 +103,11 @@ def main() -> None:
         >>> main()
         [Бот запускается, начинает обработку входящих сообщений]
     """
+    # Проверка наличия токена
+    if not TELEGRAM_TOKEN:
+        logger.critical("Переменная окружения TELEGRAM_TOKEN не задана. Завершение работы.")
+        raise SystemExit(1)
+
     # Инициализация базы данных перед запуском бота
     init_db()
 
@@ -148,9 +153,9 @@ def main() -> None:
 
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("contacts", contact))
-    application.add_handler(CommandHandler("settings", settings))
+    application.add_handler(CommandHandler("settings", settings_command))
 
     # Регистрация обработчиков для кнопок из команды /help
     application.add_handler(CallbackQueryHandler(start, pattern='^start$'))

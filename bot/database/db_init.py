@@ -37,31 +37,27 @@ def init_db() -> None:
         logger.info(f"Инициализация базы данных по пути: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
 
         # Подключение к базе данных SQLite
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
 
-        # Создание таблицы UserSettings, если она не существует
-        c.execute('''
-                    CREATE TABLE IF NOT EXISTS UserSettings
-                    (
-                        user_id INTEGER PRIMARY KEY,
-                        name TEXT,
-                        age INTEGER,
-                        weight REAL,
-                        height REAL,
-                        gender TEXT,
-                        username TEXT
-                    )
-                ''')
-        # Фиксация изменений в базе данных
-        conn.commit()
-        logger.info("Таблица UserSettings успешно создана или уже существует")
+            # Создание таблицы UserSettings, если она не существует
+            c.execute('''
+                        CREATE TABLE IF NOT EXISTS UserSettings
+                        (
+                            user_id INTEGER PRIMARY KEY,
+                            name TEXT,
+                            age INTEGER,
+                            weight REAL,
+                            height REAL,
+                            gender TEXT,
+                            username TEXT
+                        )
+                    ''')
+            # Фиксация изменений в базе данных
+            conn.commit()
+            logger.info("Таблица UserSettings успешно создана или уже существует")
     except sqlite3.Error as e:
-        logger.error(f"Ошибка при инициализации базы данных: e")
+        logger.error(f"Ошибка при инициализации базы данных: {e}")
         raise
-
     finally:
-        # Закрытие соединения с базой данных
-        if conn:
-            conn.close()
-            logger.info("Соединение с базой данных закрыто")
+        logger.debug("Инициализация БД завершена")

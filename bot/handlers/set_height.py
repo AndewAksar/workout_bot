@@ -63,11 +63,10 @@ async def set_height(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         height = float(update.message.text.strip())
         if height < 0 or height > 300:
             raise ValueError("Некорректный рост")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET height = ? WHERE user_id = ?", (height, user_id))
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("UPDATE UserSettings SET height = ? WHERE user_id = ?", (height, user_id))
+            conn.commit()
         await update.message.reply_text(
             f"✅ Рост обновлен: {height} см",
             reply_markup=get_personal_data_menu()
