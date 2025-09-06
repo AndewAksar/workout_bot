@@ -2,16 +2,11 @@
 """
 Модуль: help_command.py
 Описание: Модуль содержит обработчик команды /help.
-Обработчик используют клавиатуру для интерактивного интерфейса.
+Обработчик отправляет текстовое сообщение со списком доступных команд в виде ссылок.
 
 Зависимости:
 - telegram: Для взаимодействия с Telegram API.
 - telegram.ext: Для работы с контекстом и обновлениями Telegram.
-- InlineKeyboardButton: Кнопка для клавиатуры.
-- InlineKeyboardMarkup: Макет клавиатуры.
-
-Автор: Aksarin A.
-Дата создания: 19/08/2025
 """
 
 from telegram import Update
@@ -34,31 +29,19 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_id = update.message.message_id
 
     try:
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "🚀 Стартовать бота", callback_data='start'
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "⚙️ Настройки", callback_data='settings'
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "📞 Контакты владельца", callback_data='contacts'
-                )
-            ],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            "Выберите команду:",
-            reply_markup=reply_markup
+        help_text = (
+            "📋 Доступные команды:\n\n"
+            "/start - 🚀 Запустить бота\n"
+            "/settings - ⚙️ Настройки\n"
+            "/contacts - 📞 Контакты владельца"
         )
 
-        # Планируем удаление только сообщения с командой /contacts
+        await update.message.reply_text(
+            help_text,
+            parse_mode="HTML"
+        )
+
+        # Планируем удаление сообщения с командой /help
         logger.info(f"Планируется удаление сообщения {message_id} в чате {chat_id}")
         await schedule_message_deletion(
             context,
@@ -72,4 +55,5 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "❌ Произошла ошибка. Попробуйте снова позже.",
             parse_mode="HTML"
+
         )

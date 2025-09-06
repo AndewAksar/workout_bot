@@ -55,15 +55,31 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отображает меню настроек."""
+    if update is None or update.callback_query is None:
+        logger.error("Update or callback_query is None in show_settings")
+        return ConversationHandler.END
+
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} открыл настройки")
 
-    await query.message.edit_text(
-        "⚙️ Настройки профиля:",
-        reply_markup=get_settings_menu()
-    )
+    try:
+        await query.message.edit_text(
+            text="⚙️ Настройки профиля:",
+            reply_markup=get_settings_menu()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в show_settings для пользователя {user_id}: {e}")
+        try:
+            await query.message.reply_text(
+                "⚠️ Произошла ошибка при открытии настроек. Попробуйте снова.",
+                reply_markup=get_main_menu()
+            )
+        except Exception as reply_error:
+            logger.error(f"Ошибка при отправке сообщения об ошибке для пользователя {user_id}: {reply_error}")
+        return ConversationHandler.END
+
     context.user_data['conversation_active'] = False
     return ConversationHandler.END
 

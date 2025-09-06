@@ -7,7 +7,6 @@ InlineKeyboardButton и InlineKeyboardMarkup из библиотеки python-te
 
 Зависимости:
 - telegram: Для создания интерактивных кнопок и клавиатур (InlineKeyboardButton, InlineKeyboardMarkup).
-
 """
 
 from telegram import (
