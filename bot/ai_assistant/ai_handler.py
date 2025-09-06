@@ -71,7 +71,7 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Отправляем сообщение и сохраняем его ID
     message = await query.message.edit_text(
-        "🤖 AI-консультант готов! Задайте свой вопрос по тренировкам, питанию или мотивации.\n\n"
+        "🤖 AI-консультант готов! Задайте свой вопрос GigaChat по тренировкам, питанию или мотивации.\n\n"
         "Чтобы завершить, нажмите кнопку ниже.",
         reply_markup=exit_keyboard
     )
@@ -260,30 +260,56 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.debug("Ошибка 'Message is not modified' проигнорирована")
         return
 
+    # Проверяем, что update существует
+    if update is None:
+        logger.error("Update is None in ai_error_handler")
+        # Сбрасываем состояние, но не отправляем сообщение, так как нет chat_id
+        context.user_data['conversation_active'] = False
+        if 'ai_history' in context.user_data:
+            del context.user_data['ai_history']
+        if 'start_ai_message_id' in context.user_data:
+            del context.user_data['start_ai_message_id']
+        if 'last_ai_response_id' in context.user_data:
+            del context.user_data['last_ai_response_id']
+        if 'start_keyboard_removed' in context.user_data:
+            del context.user_data['start_keyboard_removed']
+        return
+
+    chat_id = None
+    user_id = None
+
     if update.callback_query:
         user_id = update.callback_query.from_user.id
         chat_id = update.callback_query.message.chat_id
-        try:
-            message = await update.callback_query.message.reply_text(
-                "⚠️ Произошла ошибка. Попробуйте снова.",
-                reply_markup = get_main_menu()
-            )
-            await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
-        except Exception as send_error:
-            logger.error(f"Ошибка при отправке сообщения об ошибке: {send_error}")
-
     elif update.message:
         user_id = update.message.from_user.id
         chat_id = update.message.chat_id
-        try:
-            message = await update.message.reply_text(
-                "⚠️ Произошла ошибка. Попробуйте снова.",
-                reply_markup = get_main_menu()
-            )
-            await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
-        except Exception as send_error:
-            logger.error(f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}")
+    else:
+        logger.error("Update не содержит ни callback_query, ни message")
+        # Сбрасываем состояние
+        context.user_data['conversation_active'] = False
+        if 'ai_history' in context.user_data:
+            del context.user_data['ai_history']
+        if 'start_ai_message_id' in context.user_data:
+            del context.user_data['start_ai_message_id']
+        if 'last_ai_response_id' in context.user_data:
+            del context.user_data['last_ai_response_id']
+        if 'start_keyboard_removed' in context.user_data:
+            del context.user_data['start_keyboard_removed']
+        return
 
+    try:
+        message = await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Произошла ошибка. Попробуйте снова.",
+            reply_markup=get_main_menu()
+        )
+        await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+
+    except Exception as send_error:
+        logger.error(f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}")
+
+    # Сбрасываем состояние
     context.user_data['conversation_active'] = False
     if 'ai_history' in context.user_data:
         del context.user_data['ai_history']

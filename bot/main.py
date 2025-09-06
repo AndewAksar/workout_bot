@@ -152,6 +152,10 @@ def main() -> None:
     application.add_handler(CommandHandler("contacts", contact))
     application.add_handler(CommandHandler("settings", settings))
 
+    # Регистрация обработчиков для кнопок из команды /help
+    application.add_handler(CallbackQueryHandler(start, pattern='^start$'))
+    application.add_handler(CallbackQueryHandler(contact, pattern='^contacts$'))
+
     # Регистрация обработчика для AI-консультации
     application.add_error_handler(ai_error_handler)
 
