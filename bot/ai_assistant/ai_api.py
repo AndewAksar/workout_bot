@@ -25,9 +25,9 @@ from bot.config.settings import (
     OAUTH_URL,
     GIGACHAT_API_URL,
     CLIENT_CREDENTIALS,
-    DB_PATH
+    DB_PATH,
+    VERIFY_SSL
 )
-from bot.ai_assistant.ai_prompt import get_system_prompt
 
 
 logger = setup_logging()
@@ -56,7 +56,7 @@ def get_gigachat_token() -> str:
     }
     try:
         logger.info("Получение токена через OAuth...")
-        response = requests.post(OAUTH_URL, headers=headers, data=payload, verify=False)
+        response = requests.post(OAUTH_URL, headers=headers, data=payload, verify=VERIFY_SSL)
         if response.status_code == 200:
             GIGACHAT_AUTH_TOKEN = response.json()['access_token']
             logger.info(f"Токен получен: {GIGACHAT_AUTH_TOKEN[:10]}...")
@@ -131,30 +131,19 @@ def generate_gigachat_response(
     headers = {
         'Authorization': f'Bearer {GIGACHAT_AUTH_TOKEN}',
         'Content-Type': 'application/json',
-        'RqUID': str(uuid.uuid4())
+        'RqUID': str(uuid.uuid4()),
     }
     data = {
         "model": "GigaChat",
         "messages": messages,
         "max_tokens": 2500,
-        "temperature": 0.7
-    }
-    headers = {
-        'Authorization': f'Bearer {GIGACHAT_AUTH_TOKEN}',
-        'Content-Type': 'application/json',
-        'RqUID': str(uuid.uuid4())
-    }
-    data = {
-        "model": "GigaChat",
-        "messages": messages,
-        "max_tokens": 2500,
-        "temperature": 0.7
+        "temperature": 0.7,
     }
     for attempt in range(retries):
         try:
             logger.info(f"Отправка запроса (попытка {attempt + 1}/{retries}) с заголовком Authorization: Bearer {GIGACHAT_AUTH_TOKEN[:10]}...")
             logger.info(f"Отправляемый запрос: {json.dumps(data, ensure_ascii=False)}")
-            response = requests.post(GIGACHAT_API_URL, json=data, headers=headers, verify=False)
+            response = requests.post(GIGACHAT_API_URL, json=data, headers=headers, verify=VERIFY_SSL)
             logger.info(f"Получен ответ: {response.status_code} - {response.text}")
             if response.status_code == 200:
                 return response.json()['choices'][0]['message']['content']

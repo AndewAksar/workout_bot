@@ -13,7 +13,7 @@
 - bot.ai_assistant.ai_prompt: Для получения системного промпта.
 """
 
-import logging
+import asyncio
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -128,8 +128,8 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Формируем полный список сообщений для API
         messages = [{"role": "system", "content": system_prompt}] + context.user_data['ai_history']
 
-        # Получаем ответ от API
-        response = generate_gigachat_response(messages)
+        # Получаем ответ от API в фоновой нити, чтобы не блокировать event loop
+        response = await asyncio.to_thread(generate_gigachat_response, messages)
         logger.debug(f"Длина ответа от GigaChat: {len(response)} символов")
 
         # Добавляем ответ assistant в историю
@@ -202,7 +202,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return AI_CONSULTATION  # Остаемся в состоянии для продолжения диалога
     except Exception as e:
         logger.error(f"Ошибка в handle_ai_message для пользователя {user_id}: {e}")
-        await update.callback_query.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+        await update.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
 
         # Сбрасываем флаг диалога
         context.user_data['conversation_active'] = False

@@ -27,6 +27,13 @@ str: Конфигурация OAuth для авторизации в Sberbank AP
 Необходима для взаимодействия с API Sberbank.
 """
 
+# Флаг верификации SSL для запросов к внешним API
+VERIFY_SSL = environ.get('VERIFY_SSL', 'false').lower() in {'1', 'true', 'yes'}
+"""
+bool: Управляет проверкой SSL‑сертификатов при запросах к внешним API.
+По умолчанию выключено (false), чтобы соответствовать текущей конфигурации.
+"""
+
 # Токен Telegram-бота, полученный из переменной окружения
 TELEGRAM_TOKEN = environ.get('TELEGRAM_TOKEN')
 """

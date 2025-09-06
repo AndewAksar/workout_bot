@@ -39,15 +39,16 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     chat_id = query.message.chat_id
     logger.info(f"Пользователь {user_id} запросил отображение профиля")
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
     try:
-        c.execute("SELECT name, age, weight, height, gender, username "
-                  "FROM UserSettings "
-                  "WHERE user_id = ?",
-                  (user_id,))
-        profile = c.fetchone()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT name, age, weight, height, gender, username "
+                "FROM UserSettings "
+                "WHERE user_id = ?",
+                (user_id,)
+            )
+            profile = c.fetchone()
         logger.info(f"Профиль для user_id {user_id}: {profile}")
         if profile:
             greeting = (
@@ -109,4 +110,4 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 # Планируем удаление сообщения об ошибке через 5 секунд
                 await schedule_message_deletion(context, [sent_message.message_id], chat_id, delay=5)
     finally:
-        conn.close()
+        logger.debug(f"Завершено отображение профиля для {user_id}")

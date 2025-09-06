@@ -55,43 +55,43 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         logger.info(f"Подключение к базе данных: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
 
-        # Проверка существования таблицы
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
-        if not c.fetchone():
-            logger.error("Таблица UserSettings не существует, вызываем init_db")
-            from bot.database.db_init import init_db
-            init_db()
+            # Проверка существования таблицы
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
+            if not cur.fetchone():
+                logger.error("Таблица UserSettings не существует, вызываем init_db")
+                from bot.database.db_init import init_db
+                init_db()
 
-        # Проверка, существует ли пользователь
-        c.execute("SELECT name FROM UserSettings WHERE user_id = ?", (user_id,))
-        existing_user = c.fetchone()
+            # Проверка, существует ли пользователь
+            cur.execute("SELECT name FROM UserSettings WHERE user_id = ?", (user_id,))
+            existing_user = cur.fetchone()
 
-        if not existing_user:
-            # Создание новой записи для нового пользователя
-            c.execute(
-                "INSERT INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
-                (user_id, username, first_name)
+            if not existing_user:
+                # Создание новой записи для нового пользователя
+                cur.execute(
+                    "INSERT INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
+                    (user_id, username, first_name)
+                )
+                logger.info(f"Создана новая запись для пользователя {user_id} (@{username})")
+            else:
+                # Обновление только username для существующего пользователя
+                cur.execute(
+                    "UPDATE UserSettings SET username = ? WHERE user_id = ?",
+                    (username, user_id)
+                )
+                logger.info(f"Обновлены данные username для пользователя {user_id} (@{username})")
+
+            conn.commit()
+
+            # Получение данных профиля
+            cur.execute(
+                "SELECT name, age, weight, height, gender FROM UserSettings WHERE user_id = ?",
+                (user_id,)
             )
-            logger.info(f"Создана новая запись для пользователя {user_id} (@{username})")
-        else:
-            # Обновление только username для существующего пользователя
-            c.execute(
-                "UPDATE UserSettings SET username = ? WHERE user_id = ?",
-                (username, user_id)
-            )
-            logger.info(f"Обновлены данные username для пользователя {user_id} (@{username})")
-
-        conn.commit()
-
-        # Получение данных профиля
-        c.execute(
-            "SELECT name, age, weight, height, gender FROM UserSettings WHERE user_id = ?",
-            (user_id,)
-        )
-        profile = c.fetchone()
+            profile = cur.fetchone()
 
         # Формирование приветственного сообщения
         greeting = (
@@ -154,7 +154,4 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     finally:
-        if 'conn' in locals():
-            conn.close()
-            logger.info(f"Соединение с базой данных закрыто для пользователя {user_id}")
-
+        logger.info(f"Завершена обработка /start для пользователя {user_id}")
