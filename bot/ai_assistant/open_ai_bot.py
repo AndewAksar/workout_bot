@@ -1,95 +1,95 @@
 # bot/ai_assistant/open_ai_bot.py
 """
-Это класс бота OpenAI. Он наследуется от базового класса бота и обеспечивает реализацию бота OpenAI.
-Он использует API OpenAI для генерации ответов на запросы пользователей.
+Модуль: open_ai_bot
+Описание: модуль содержит функции для взаимодействия с API OpenAI ChatGPT.
+Он используется Telegram-ботом для получения ответов на пользовательские
+запросы.
+Зависимости:
+- httpx: отправка HTTP-запросов к API OpenAI.
+- time: реализация задержек при повторных попытках.
+- typing: описание типов данных.
+- bot.utils.logger: настройка и использование логирования.
+- bot.config.settings: получение конфигурационных параметров.
 """
 
-import asyncio
-import os
-from os import environ
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.fsm.storage.memory import MemoryStorage
-from openai import OpenAI
+from typing import List, Dict
+import time
+import httpx
 
-# Настройки
-OPENAI_API_KEY = environ.get('OPENAI_API_KEY')
-TELEGRAM_TOKEN = environ.get('TELEGRAM_TOKEN')
-MODEL = 'gpt-3.5-turbo'
+from bot.utils.logger import setup_logging
+from bot.config.settings import (
+    OPENAI_API_KEY,
+    OPENAI_API_URL,
+    OPENAI_MODEL,
+)
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+logger = setup_logging()
 
-# Состояния FSM
-class ChatState(StatesGroup):
-    chatting = State() # Состояние диалога с пользователем в чате
+def generate_chatgpt_response(
+        messages: List[Dict[str, str]],
+        model: str = OPENAI_MODEL,
+        retries: int = 3,
+        delay: float = 2.0,
+) -> str:
+    """Генерирует ответ от ChatGPT на основе списка сообщений.
+    Args:
+        messages: Список сообщений в формате
+            ``[{"role": "system|user|assistant", "content": "текст"}, ...]``.
+        model: Модель OpenAI, используемая для генерации ответа.
+        retries: Количество повторных попыток при ошибке API.
+        delay: Задержка между повторными попытками в секундах.
+    Returns:
+        str: Ответ от ChatGPT либо сообщение об ошибке.
+    """
 
-# Хранение истории разговоров (user_id: list of messages)
-conversations = {}
+    if not OPENAI_API_KEY:
+        logger.error("Переменная окружения OPENAI_API_KEY не задана.")
+        return "Ошибка: отсутствует ключ API OpenAI."
 
-# Инициализация бота
-bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher(bot, storage=MemoryStorage())
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {"model": model, "messages": messages}
 
-@dp.message(Command('start'))
-async def start(message: types.Message):
-    """Команда /start: Отправка сообщения с inline-кнопкой"""
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Начать чат с ChatGPT", callback_data="start_chat")]
-    ])
-    await message.answer("Привет! Нажми кнопку, чтобы начать взаимодействие с ChatGPT.", reply_markup=keyboard)
+    for attempt in range(retries):
+        try:
+            logger.info(
+                "Отправка запроса к OpenAI (попытка %s/%s)",
+                attempt + 1,
+                retries,
+            )
+            response = httpx.post(
+                OPENAI_API_URL, headers=headers, json=payload, timeout=60
+            )
+            logger.debug(
+                "Ответ OpenAI: %s - %s", response.status_code, response.text
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            if response.status_code >= 500 and attempt < retries - 1:
+                logger.warning(
+                    "Серверная ошибка OpenAI (%s). Повтор через %.1f сек.",
+                    response.status_code,
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+            logger.error(
+                "Ошибка API OpenAI: %s - %s",
+                response.status_code,
+                response.text,
+            )
+            return f"Ошибка: {response.status_code} - {response.text}"
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Исключение при запросе к OpenAI: %s", exc)
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                return f"Ошибка: {exc}"
 
-@dp.callback_query(lambda c: c.data == 'start_chat')
-async def start_chat_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Обработка нажатия inline-кнопки"""
-    await callback.answer("Чат с ChatGPT начат! Отправляй сообщения.")
-    await state.set_state(ChatState.chatting)
+    return "Ошибка: Не удалось получить ответ от OpenAI после нескольких попыток."
 
-    user_id = callback.from_user.id
-    conversations[user_id] = []  # Инициализация истории для пользователя
 
-    await callback.message.answer("ChatGPT готов. Что вы хотите спросить?")
-
-@dp.message(ChatState.chatting)
-async def handle_message(message: types.Message, state: FSMContext):
-    """Обработка сообщений в состоянии chatting"""
-    user_id = message.from_user.id
-    user_message = message.text
-
-    # Добавляем сообщение пользователя в историю
-    if user_id not in conversations:
-        conversations[user_id] = []
-    conversations[user_id].append({"role": "user", "content": user_message})
-
-    # Вызов OpenAI API
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "system", "content": "You are a helpful assistant."}] + conversations[user_id]
-        )
-        ai_response = response.choices[0].message.content
-
-        # Добавляем ответ AI в историю
-        conversations[user_id].append({"role": "assistant", "content": ai_response})
-
-        # Отправляем ответ пользователю
-        await message.answer(ai_response)
-    except Exception as e:
-        await message.answer(f"Ошибка: {str(e)}")
-
-@dp.message(Command('stop'))
-async def stop_chat(message: types.Message, state: FSMContext):
-    """Команда /stop для выхода из чата"""
-    await state.clear()
-    user_id = message.from_user.id
-    if user_id in conversations:
-        del conversations[user_id]  # Очистка истории
-    await message.answer("Чат с ChatGPT завершён. Используй /start для начала.")
-
-# Запуск бота
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == '__main__':
-    asyncio.run(main())
+__all__ = ["generate_chatgpt_response"]

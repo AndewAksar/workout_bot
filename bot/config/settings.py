@@ -70,3 +70,22 @@ VALID_COMMANDS = [
     "/contacts",
     "/settings",
 ]
+
+# Настройки для работы с OpenAI
+OPENAI_API_KEY = environ.get('OPENAI_API_KEY')
+"""
+str | None: API-ключ для доступа к сервису OpenAI.
+Получается из переменной окружения ``OPENAI_API_KEY``.
+Если переменная не задана, функции, использующие OpenAI, вернут ошибку.
+"""
+
+OPENAI_API_URL = environ.get('OPENAI_API_URL', 'https://api.openai.com/v1/chat/completions')
+"""
+str: Базовый URL для обращения к ChatGPT API.
+По умолчанию используется ``https://api.openai.com/v1/chat/completions``.
+"""
+
+OPENAI_MODEL = environ.get('OPENAI_MODEL', 'gpt-4o-mini')
+"""
+str: Модель ChatGPT, применяемая по умолчанию для генерации ответов.
+"""

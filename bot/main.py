@@ -67,10 +67,13 @@ from bot.config.settings import (
 )
 from bot.ai_assistant.ai_handler import (
     start_ai_assistant,
+    choose_ai_model,
+    start_chatgpt_assistant,
+    start_gigachat_assistant,
     handle_ai_message,
     end_ai_consultation,
     ai_error_handler,
-    AI_CONSULTATION
+    AI_CONSULTATION,
 )
 from bot.handlers.callbacks import (
     set_name_callback,
@@ -115,8 +118,10 @@ def main() -> None:
             CallbackQueryHandler(show_profile, pattern='^show_profile$'),
             CallbackQueryHandler(start_training, pattern='^start_training$'),
             CallbackQueryHandler(show_trainings, pattern='^my_trainings$'),
-            CallbackQueryHandler(start_ai_assistant, pattern='^my_ai_assistant$'),
-            CallbackQueryHandler(start_ai_assistant, pattern='^start_ai_assistant$'),
+            CallbackQueryHandler(choose_ai_model, pattern='^my_ai_assistant$'),
+            CallbackQueryHandler(choose_ai_model, pattern='^start_ai_assistant$'),
+            CallbackQueryHandler(start_chatgpt_assistant, pattern='^start_chatgpt$'),
+            CallbackQueryHandler(start_gigachat_assistant, pattern='^start_gigachat$'),
             CallbackQueryHandler(show_settings, pattern='^settings$'),
             CallbackQueryHandler(show_personal_data_menu, pattern='^personal_data$'),
             CallbackQueryHandler(show_training_settings, pattern='^training_settings$'),

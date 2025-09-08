@@ -16,3 +16,15 @@ def get_ai_assistant_menu():
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
+def get_model_selection_menu() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру выбора модели AI."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🌐 ChatGPT", callback_data="start_chatgpt"),
+            InlineKeyboardButton("🇷🇺 GigaChat", callback_data="start_gigachat"),
+        ],
+        [InlineKeyboardButton("🔙 Назад", callback_data="settings")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
