@@ -1,23 +1,14 @@
 # bot/handlers/settings_command.py
-"""
-Модуль: settings_command.py
-Описание: Модуль содержит обработчик команды /settings.
+"""Обработчик команды /settings."""
 
-Зависимости:
-- telegram: Для взаимодействия с Telegram API.
-- telegram.ext: Для работы с контекстом и обновлениями Telegram.
-- bot.keyboards.settings_menu: Для генерации меню настроек и подменю.
-
-Автор: Aksarin A.
-Дата создания: 19/08/2025
-"""
-
+import sqlite3
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.utils.message_deletion import schedule_message_deletion
 from bot.utils.logger import setup_logging
+from bot.config.settings import DB_PATH
 
 
 logger = setup_logging()
@@ -29,12 +20,19 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_id = update.message.message_id
 
     try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        mode = row[0] if row else 'local'
+        mode_text = 'Интеграция с Gym-Stat.ru' if mode == 'api' else 'Telegram-версия'
+
         await update.message.reply_text(
-            "⚙️ Настройки профиля:",
+            f"⚙️ Настройки\nТекущий режим: {mode_text}",
             reply_markup=get_settings_menu()
         )
 
-        # Планируем удаление только сообщения с командой /contacts
+        # Планируем удаление только сообщения с командой /settings
         logger.info(f"Планируется удаление сообщения {message_id} в чате {chat_id}")
         await schedule_message_deletion(
             context,
@@ -44,8 +42,12 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     except Exception as e:
-        logger.error(f"Ошибка при обработке команды /help: {e}")
+        logger.error(f"Ошибка при обработке команды /settings: {e}")
         await update.message.reply_text(
             "❌ Произошла ошибка. Попробуйте снова позже.",
             parse_mode="HTML"
         )
+
+    finally:
+        if 'conn' in locals():
+            conn.close()

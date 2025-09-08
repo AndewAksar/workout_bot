@@ -91,5 +91,4 @@ def generate_chatgpt_response(
 
     return "Ошибка: Не удалось получить ответ от OpenAI после нескольких попыток."
 
-
 __all__ = ["generate_chatgpt_response"]

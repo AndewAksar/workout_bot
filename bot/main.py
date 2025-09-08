@@ -44,6 +44,7 @@ from bot.commands.help_command import help
 from bot.commands.contact_command import contact
 from bot.commands.settings_command import settings
 from bot.commands.cancel_command import cancel
+from bot.commands.delete_data_command import delete_data
 from bot.handlers.profile_display import show_profile
 from bot.handlers.misc_handlers import (
     start_training,
@@ -83,11 +84,18 @@ from bot.handlers.callbacks import (
     set_gender_callback
 )
 from bot.database.db_init import init_db
+from bot.handlers.mode_handlers import (
+    select_mode_local,
+    select_mode_api,
+    show_help,
+    switch_mode_prompt,
+    confirm_switch_mode,
+    cancel_switch,
+)
 
 
 # Инициализация логгера для записи событий и ошибок
 logger = setup_logging()
-
 
 
 def main() -> None:
@@ -156,10 +164,18 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("contacts", contact))
     application.add_handler(CommandHandler("settings", settings))
+    application.add_handler(CommandHandler("switch_mode", switch_mode_prompt))
+    application.add_handler(CommandHandler("delete_data", delete_data))
 
     # Регистрация обработчиков для кнопок из команды /help
     application.add_handler(CallbackQueryHandler(start, pattern='^start$'))
     application.add_handler(CallbackQueryHandler(contact, pattern='^contacts$'))
+    application.add_handler(CallbackQueryHandler(select_mode_local, pattern='^select_mode_local$'))
+    application.add_handler(CallbackQueryHandler(select_mode_api, pattern='^select_mode_api$'))
+    application.add_handler(CallbackQueryHandler(show_help, pattern='^show_help$'))
+    application.add_handler(CallbackQueryHandler(switch_mode_prompt, pattern='^switch_mode$'))
+    application.add_handler(CallbackQueryHandler(confirm_switch_mode, pattern='^confirm_switch_(local|api)$'))
+    application.add_handler(CallbackQueryHandler(cancel_switch, pattern='^cancel_switch$'))
 
     # Регистрация обработчика для AI-консультации
     application.add_error_handler(ai_error_handler)

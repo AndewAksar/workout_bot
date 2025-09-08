@@ -21,6 +21,7 @@ from telegram.ext import ContextTypes
 from bot.config.settings import WELCOME_MESSAGE, DB_PATH
 from bot.keyboards.main_menu import get_main_menu
 from bot.utils.logger import setup_logging
+from bot.keyboards.mode_selection import get_mode_selection_keyboard
 from bot.utils.message_deletion import schedule_message_deletion
 
 
@@ -28,25 +29,7 @@ logger = setup_logging()
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-        Обработчик команды /start.
-        Описание:
-            Выполняет начальную регистрацию пользователя или обновление его данных в базе данных.
-            Извлекает информацию о пользователе (ID, имя, username) и сохраняет её.
-            Формирует приветственное сообщение с данными профиля (если они есть) и отправляет его с главным меню.
-            Планирует удаление команды /start через 3 секунды, оставляя ответное сообщение с меню.
-        Аргументы:
-            update (telegram.Update): Объект обновления, содержащий информацию о входящем сообщении.
-            context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды, предоставляющий доступ к данным бота.
-        Возвращаемое значение:
-            None
-        Исключения:
-            - sqlite3.Error: Если возникают ошибки при работе с базой данных.
-            - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-        Пример использования:
-            Пользователь отправляет команду /start, бот отвечает приветственным сообщением и отображает главное меню.
-            Сообщение с командой /start удаляется через 3 секунды, ответ бота с меню остается.
-    """
+    """Обрабатывает команду /start."""
     # Извлечение данных пользователя из объекта Update
     user = update.message.from_user
     user_id = user.id
@@ -58,39 +41,57 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
-        # Проверка существования таблицы
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
+        # Проверяем наличие таблиц
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if not c.fetchone():
-            logger.error("Таблица UserSettings не существует, вызываем init_db")
             from bot.database.db_init import init_db
             init_db()
 
-        # Проверка, существует ли пользователь
-        c.execute("SELECT name FROM UserSettings WHERE user_id = ?", (user_id,))
-        existing_user = c.fetchone()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
 
-        if not existing_user:
-            # Создание новой записи для нового пользователя
-            c.execute(
-                "INSERT INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
-                (user_id, username, first_name)
-            )
-            logger.info(f"Создана новая запись для пользователя {user_id} (@{username})")
-        else:
-            # Обновление только username для существующего пользователя
-            c.execute(
-                "UPDATE UserSettings SET username = ? WHERE user_id = ?",
-                (username, user_id)
-            )
-            logger.info(f"Обновлены данные username для пользователя {user_id} (@{username})")
+        if not c.fetchone():
+            from bot.database.db_init import init_db
+            init_db()
 
+        # Проверяем, есть ли пользователь
+        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
+        user_record = c.fetchone()
+
+        if not user_record:
+            c.execute(
+            "INSERT INTO users (user_id, telegram_username, mode) VALUES (?, ?, 'local')",
+            (user_id, username),
+            )
+
+        c.execute(
+            "INSERT OR IGNORE INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
+            (user_id, username, first_name),
+        )
+
+        c.execute(
+            "UPDATE UserSettings SET username = ?, name = COALESCE(name, ?) WHERE user_id = ?",
+            (username, first_name, user_id),
+        )
+
+        c.execute(
+            "UPDATE users SET telegram_username = ? WHERE user_id = ?",
+            (username, user_id),
+        )
         conn.commit()
 
-        # Получение данных профиля
-        c.execute(
-            "SELECT name, age, weight, height, gender FROM UserSettings WHERE user_id = ?",
-            (user_id,)
-        )
+        if not user_record:
+            await update.message.reply_text(
+                "💪 Добро пожаловать в бот для тренировок!\nВыберите режим работы:",
+                reply_markup=get_mode_selection_keyboard()
+            )
+            await schedule_message_deletion(
+                context,
+                [update.message.message_id],
+                chat_id=update.message.chat_id,
+                delay=5)
+            return
+
+        c.execute("SELECT name, age, weight, height, gender FROM UserSettings WHERE user_id = ?", (user_id,))
         profile = c.fetchone()
 
         # Формирование приветственного сообщения

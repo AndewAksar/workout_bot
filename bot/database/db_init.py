@@ -3,7 +3,6 @@
 Модуль: db_init.py
 Описание: Модуль отвечает за инициализацию базы данных SQLite для хранения настроек пользователей Telegram-бота.
 Создает таблицу UserSettings, если она еще не существует, для хранения пользовательских данных.
-
 Зависимости:
 - sqlite3: Для работы с базой данных SQLite.
 """
@@ -53,9 +52,22 @@ def init_db() -> None:
                         username TEXT
                     )
                 ''')
+        # Создание таблицы users для хранения режима работы и профиля
+        c.execute('''
+                    CREATE TABLE IF NOT EXISTS users
+                    (
+                        user_id INTEGER PRIMARY KEY,
+                        telegram_username TEXT,
+                        mode TEXT DEFAULT 'local',
+                        profile_data TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+
         # Фиксация изменений в базе данных
         conn.commit()
-        logger.info("Таблица UserSettings успешно создана или уже существует")
+        logger.info("Таблицы UserSettings и users успешно созданы или уже существуют")
+
     except sqlite3.Error as e:
         logger.error(f"Ошибка при инициализации базы данных: e")
         raise

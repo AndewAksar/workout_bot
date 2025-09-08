@@ -13,6 +13,7 @@
 - bot.utils.logger: Для настройки логирования.
 """
 
+import sqlite3
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -21,6 +22,7 @@ from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.keyboards.training_settings_menu import get_training_settings_menu
 from bot.utils.logger import setup_logging
+from bot.config.settings import DB_PATH
 
 
 logger = setup_logging()
@@ -65,8 +67,15 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     logger.info(f"Пользователь {user_id} открыл настройки")
 
     try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        mode = row[0] if row else 'local'
+        mode_text = 'Интеграция с Gym-Stat.ru' if mode == 'api' else 'Telegram-версия'
+
         await query.message.edit_text(
-            text="⚙️ Настройки профиля:",
+            text=f"⚙️ Настройки\nТекущий режим: {mode_text}",
             reply_markup=get_settings_menu()
         )
     except Exception as e:
@@ -74,11 +83,14 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         try:
             await query.message.reply_text(
                 "⚠️ Произошла ошибка при открытии настроек. Попробуйте снова.",
-                reply_markup=get_main_menu()
+                reply_markup=get_main_menu(),
             )
         except Exception as reply_error:
             logger.error(f"Ошибка при отправке сообщения об ошибке для пользователя {user_id}: {reply_error}")
         return ConversationHandler.END
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
     context.user_data['conversation_active'] = False
     return ConversationHandler.END

@@ -32,6 +32,11 @@ def get_settings_menu():
         ],
         [
             InlineKeyboardButton(
+                "🔄 Сменить режим", callback_data='switch_mode'
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "🔙 Назад в главное меню", callback_data='main_menu'
             )
         ]
