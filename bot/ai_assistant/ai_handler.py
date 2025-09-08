@@ -17,7 +17,8 @@ import logging
 from telegram import (
     Update,
     InlineKeyboardButton,
-    InlineKeyboardMarkup
+    InlineKeyboardMarkup,
+
 )
 from telegram.error import TelegramError
 from telegram.ext import (
@@ -27,10 +28,12 @@ from telegram.ext import (
 
 from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
+from bot.keyboards.ai_assistant_menu import get_model_selection_menu
 from bot.ai_assistant.ai_api import (
     generate_gigachat_response,
     get_user_settings
 )
+from bot.ai_assistant.open_ai_bot import generate_chatgpt_response
 from bot.ai_assistant.ai_prompt import get_system_prompt
 from bot.utils.message_deletion import schedule_message_deletion
 from bot.config.settings import AI_CONSULTATION
@@ -44,7 +47,28 @@ GIGACHAT_AUTH_TOKEN = None
 # Ограничение на длину сообщения
 MAX_MESSAGE_LENGTH = 4096
 
-# Обработчик запуска консультации с AI (вызывается по callback_data='start_ai_assistant')
+# Меню выбора модели
+async def choose_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Предлагает пользователю выбрать языковую модель."""
+    query = update.callback_query
+    await query.answer()
+    await query.message.edit_text(
+        "🤖 Выберите языковую модель для консультации:",
+        reply_markup=get_model_selection_menu(),
+    )
+    return ConversationHandler.END
+
+async def start_gigachat_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запуск консультации с моделью GigaChat."""
+    context.user_data['ai_model'] = 'gigachat'
+    return await start_ai_assistant(update, context)
+
+async def start_chatgpt_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запуск консультации с моделью ChatGPT."""
+    context.user_data['ai_model'] = 'chatgpt'
+    return await start_ai_assistant(update, context)
+
+# Обработчик запуска консультации с AI после выбора модели
 async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Обработчик для запуска консультации с AI-ассистентом.
@@ -64,6 +88,10 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['current_state'] = 'AI_CONSULTATION'
     context.user_data['ai_history'] = []  # Инициализация истории диалога
 
+    # Определяем выбранную модель
+    model = context.user_data.get('ai_model', 'gigachat')
+    model_name = 'ChatGPT' if model == 'chatgpt' else 'GigaChat'
+
     # Клавиатура с кнопкой выхода
     exit_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🚪 Завершить консультацию", callback_data='end_ai_consultation')]
@@ -71,7 +99,7 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Отправляем сообщение и сохраняем его ID
     message = await query.message.edit_text(
-        "🤖 AI-консультант готов! Задайте свой вопрос GigaChat по тренировкам, питанию или мотивации.\n\n"
+        f"🤖 Вы выбрали {model_name}. Задайте свой вопрос по тренировкам, питанию или мотивации.\n\n",
         "Чтобы завершить, нажмите кнопку ниже.",
         reply_markup=exit_keyboard
     )
@@ -128,9 +156,14 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Формируем полный список сообщений для API
         messages = [{"role": "system", "content": system_prompt}] + context.user_data['ai_history']
 
-        # Получаем ответ от API
-        response = generate_gigachat_response(messages)
-        logger.debug(f"Длина ответа от GigaChat: {len(response)} символов")
+        # Получаем ответ от выбранной модели
+        model = context.user_data.get('ai_model', 'gigachat')
+        if model == 'chatgpt':
+            response = generate_chatgpt_response(messages)
+            logger.debug(f"Длина ответа от ChatGPT: {len(response)} символов")
+        else:
+            response = generate_gigachat_response(messages)
+            logger.debug(f"Длина ответа от GigaChat: {len(response)} символов")
 
         # Добавляем ответ assistant в историю
         context.user_data['ai_history'].append({"role": "assistant", "content": response})
@@ -246,6 +279,8 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
         del context.user_data['last_ai_response_id']
     if 'start_keyboard_removed' in context.user_data:
         del context.user_data['start_keyboard_removed']
+    if 'ai_model' in context.user_data:
+        del context.user_data['ai_model']
 
     return ConversationHandler.END
 
@@ -273,6 +308,8 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             del context.user_data['last_ai_response_id']
         if 'start_keyboard_removed' in context.user_data:
             del context.user_data['start_keyboard_removed']
+        if 'ai_model' in context.user_data:
+            del context.user_data['ai_model']
         return
 
     chat_id = None
@@ -296,6 +333,8 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             del context.user_data['last_ai_response_id']
         if 'start_keyboard_removed' in context.user_data:
             del context.user_data['start_keyboard_removed']
+        if 'ai_model' in context.user_data:
+            del context.user_data['ai_model']
         return
 
     try:
@@ -319,5 +358,7 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         del context.user_data['last_ai_response_id']
     if 'start_keyboard_removed' in context.user_data:
         del context.user_data['start_keyboard_removed']
+    if 'ai_model' in context.user_data:
+        del context.user_data['ai_model']
 
     return ConversationHandler.END
