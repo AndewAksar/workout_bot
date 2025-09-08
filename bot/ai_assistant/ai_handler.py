@@ -25,6 +25,7 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
+from telegram.constants import ParseMode
 
 from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
@@ -101,6 +102,7 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
     message = await query.message.edit_text(
         f"🤖 Вы выбрали {model_name}. Задайте свой вопрос по тренировкам, питанию или мотивации.\n\n",
         "Чтобы завершить, нажмите кнопку ниже.",
+        parse_mode=ParseMode.HTML,
         reply_markup=exit_keyboard
     )
     context.user_data['start_ai_message_id'] = message.message_id
@@ -128,7 +130,8 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.warning(f"Некорректное состояние для handle_ai_message: {context.user_data.get('current_state')}")
         await update.message.reply_text(
             "⚠️ Пожалуйста, начните консультацию с AI заново.",
-            reply_markup=get_main_menu()
+            reply_markup=get_main_menu(),
+            parse_mode=ParseMode.HTML
         )
         return ConversationHandler.END
 
@@ -197,7 +200,11 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         # Разделяем ответ, если он превышает лимит Telegram
         if len(response) <= MAX_MESSAGE_LENGTH:
-            sent_message = await update.message.reply_text(response, reply_markup=exit_keyboard)
+            sent_message = await update.message.reply_text(
+                response,
+                parse_mode=None,
+                reply_markup=exit_keyboard
+            )
             context.user_data['last_ai_response_id'] = sent_message.message_id  # Сохраняем ID последнего ответа
             logger.debug(f"Сохранён last_ai_response_id: {sent_message.message_id}")
         else:
@@ -221,6 +228,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     is_last_part = end >= len(response)
                     sent_message = await update.message.reply_text(
                         part,
+                        parse_mode=None,
                         reply_markup=exit_keyboard if is_last_part else None
                     )
                     messages.append(sent_message.message_id)
@@ -235,7 +243,10 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return AI_CONSULTATION  # Остаемся в состоянии для продолжения диалога
     except Exception as e:
         logger.error(f"Ошибка в handle_ai_message для пользователя {user_id}: {e}")
-        await update.callback_query.message.reply_text("⚠️ Произошла ошибка. Консультация завершена.")
+        await update.callback_query.message.reply_text(
+            "⚠️ Произошла ошибка. Консультация завершена.",
+            parse_mode=ParseMode.HTML
+        )
 
         # Сбрасываем флаг диалога
         context.user_data['conversation_active'] = False
@@ -266,7 +277,8 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Отправляем новое сообщение с главным меню
     await query.message.reply_text(
         "🤖 Консультация завершена. Возвращаемся в главное меню.",
-        reply_markup=get_main_menu()
+        reply_markup=get_main_menu(),
+        parse_mode=ParseMode.HTML
     )
 
     # Сбрасываем флаг диалога и очищаем историю
@@ -341,7 +353,8 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         message = await context.bot.send_message(
             chat_id=chat_id,
             text="⚠️ Произошла ошибка. Попробуйте снова.",
-            reply_markup=get_main_menu()
+            reply_markup=get_main_menu(),
+            parse_mode = ParseMode.HTML
         )
         await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
 
