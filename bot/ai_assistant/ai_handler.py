@@ -71,37 +71,30 @@ async def start_chatgpt_assistant(update: Update, context: ContextTypes.DEFAULT_
 
 # Обработчик запуска консультации с AI после выбора модели
 async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Обработчик для запуска консультации с AI-ассистентом.
-    Аргументы:
-        update (telegram.Update): Объект обновления Telegram.
-        context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения.
-    Возвращаемое значение:
-        int: Состояние AI_CONSULTATION для ConversationHandler.
-    """
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} начал консультацию с AI-ассистентом.")
 
-    # Устанавливаем флаг активного диалога и инициализируем историю
     context.user_data['conversation_active'] = True
     context.user_data['current_state'] = 'AI_CONSULTATION'
-    context.user_data['ai_history'] = []  # Инициализация истории диалога
+    context.user_data['ai_history'] = []
 
-    # Определяем выбранную модель
     model = context.user_data.get('ai_model', 'gigachat')
     model_name = 'ChatGPT' if model == 'chatgpt' else 'GigaChat'
 
-    # Клавиатура с кнопкой выхода
     exit_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🚪 Завершить консультацию", callback_data='end_ai_consultation')]
     ])
 
-    # Отправляем сообщение и сохраняем его ID
+    # Объединяем текст в одну строку
+    message_text = (
+        f"🤖 Вы выбрали {model_name}. Задайте свой вопрос по тренировкам, питанию или мотивации.\n\n"
+        "Чтобы завершить, нажмите кнопку ниже."
+    )
+
     message = await query.message.edit_text(
-        f"🤖 Вы выбрали {model_name}. Задайте свой вопрос по тренировкам, питанию или мотивации.\n\n",
-        "Чтобы завершить, нажмите кнопку ниже.",
+        text=message_text,
         parse_mode=ParseMode.HTML,
         reply_markup=exit_keyboard
     )
