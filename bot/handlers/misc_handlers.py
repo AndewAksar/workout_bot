@@ -17,10 +17,13 @@ import sqlite3
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
+from bot.api.gym_stat_client import get_trainings as api_get_trainings
 from bot.keyboards.main_menu import get_main_menu
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.keyboards.training_settings_menu import get_training_settings_menu
+from bot.utils.api_session import get_valid_access_token
+from bot.utils.db_utils import get_user_mode
 from bot.utils.logger import setup_logging
 from bot.config.settings import DB_PATH
 
@@ -42,16 +45,42 @@ async def start_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return ConversationHandler.END
 
 async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Отображает информацию о тренировках (функция в разработке)."""
+    """Отображает список тренировок пользователя."""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} запросил список тренировок")
 
-    await query.message.edit_text(
-        "🗂️ Здесь будут отображаться ваши тренировки (функция в разработке).",
-        reply_markup=get_main_menu()
-    )
+    mode = get_user_mode(user_id)
+
+    if mode == 'api':
+        token = await get_valid_access_token(user_id)
+        if not token:
+            await query.message.edit_text(
+                "🔐 Требуется вход. Используйте /login.",
+                reply_markup=get_main_menu(),
+            )
+            context.user_data['conversation_active'] = False
+            return ConversationHandler.END
+        resp = await api_get_trainings(token)
+        if resp.status_code == 200:
+            trainings = resp.json() or []
+            if trainings:
+                text = "\n".join(
+                    f"📅 {t.get('date')}: {len(t.get('exercises', []))} упражнений" for t in trainings
+                )
+            else:
+                text = "📭 Тренировки не найдены."
+            await query.message.edit_text(text, reply_markup=get_main_menu())
+        else:
+            await query.message.edit_text(
+                "❌ Не удалось получить тренировки.", reply_markup=get_main_menu()
+            )
+    else:
+        await query.message.edit_text(
+            "🗂️ Здесь будут отображаться ваши тренировки (функция в разработке).",
+            reply_markup=get_main_menu(),
+        )
     context.user_data['conversation_active'] = False
     return ConversationHandler.END
 

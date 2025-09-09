@@ -13,6 +13,7 @@
 import os
 from os import environ
 from dotenv import load_dotenv
+from cryptography.fernet import Fernet
 
 
 # Загрузка переменных окружения из файла .env
@@ -22,6 +23,15 @@ load_dotenv()
 OAUTH_URL = environ.get('OAUTH_URL')
 GIGACHAT_API_URL = environ.get('GIGACHAT_API_URL')
 CLIENT_CREDENTIALS = environ.get('CLIENT_CREDENTIALS')
+"""
+str: Конфигурация OAuth для авторизации в Sberbank API.
+Необходима для взаимодействия с API Sberbank.
+"""
+
+# Базовый URL API Gym-Stat
+GYMSTAT_API_URL = environ.get('GYMSTAT_API_URL', 'https://api.gym-stat.ru')
+# Ключ для шифрования токенов
+ENCRYPT_KEY = environ.get('ENCRYPT_KEY', Fernet.generate_key().decode())
 """
 str: Конфигурация OAuth для авторизации в Sberbank API.
 Необходима для взаимодействия с API Sberbank.

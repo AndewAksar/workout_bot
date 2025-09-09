@@ -22,7 +22,7 @@ import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from bot.config.settings import DB_PATH
+from bot.config.settings import DB_PATH, GYMSTAT_API_URL
 from bot.keyboards.main_menu import get_main_menu
 from bot.keyboards.mode_selection import get_mode_selection_keyboard
 from bot.keyboards.settings_menu import get_settings_menu
@@ -70,11 +70,20 @@ async def _api_available() -> bool:
     """Проверяет доступность API Gym-Stat."""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get("https://api.gym-stat.ru/v1/ping")
-            return resp.status_code == 200
+            resp = await client.get(f"{GYMSTAT_API_URL}/ping")
     except Exception as e:
-        logger.error(f"Ошибка при проверке API: {e}")
+        logger.exception("Ошибка при проверке API: %s", e)
         return False
+    if resp.status_code >= 500:
+        logger.warning(
+            "Проверка API Gym-Stat вернула %s: %s", resp.status_code, resp.text
+        )
+        return False
+    if resp.status_code != 200:
+        logger.info(
+            "Проверка API Gym-Stat вернула код %s: %s", resp.status_code, resp.text
+        )
+    return True
 
 async def select_mode_api(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик выбора API режима."""
@@ -84,15 +93,16 @@ async def select_mode_api(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if await _api_available():
         _update_user_mode(user_id, 'api')
-        logger.info(f"Пользователь {user_id} выбрал API режим")
+        logger.info("Пользователь %s выбрал API режим", user_id)
         await query.message.edit_text(
-            f"Вы выбрали интеграцию с Gym-Stat.ru. Скоро добавим регистрацию и синхронизацию. "
-            f"Для работы используйте /profile или /log.",
+            f"Вы выбрали интеграцию с Gym-Stat.ru. Используйте /register для регистрации или /login для входа.",
             reply_markup=get_main_menu(),
         )
     else:
         _update_user_mode(user_id, 'local')
-        logger.warning("API недоступно, переключаемся на локальный режим")
+        logger.warning(
+            "Пользователь %s: API недоступно, остаёмся в локальном режиме", user_id
+        )
         await query.message.edit_text(
             "⚠️ Сайт Gym-Stat.ru недоступен. Переключаемся на Telegram-версию.",
             reply_markup=get_main_menu(),
@@ -143,6 +153,10 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
     target_mode = query.data.replace('confirm_switch_', '')
 
     if target_mode == 'api' and not await _api_available():
+        logger.warning(
+            "Пользователь %s: попытка переключиться на API режим, но API недоступно",
+            user_id,
+        )
         await query.message.edit_text(
             "⚠️ Сайт Gym-Stat.ru недоступен. Остаёмся в Telegram-версии.",
             reply_markup=get_settings_menu(),

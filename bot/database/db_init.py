@@ -52,7 +52,7 @@ def init_db() -> None:
                         username TEXT
                     )
                 ''')
-        # Создание таблицы users для хранения режима работы и профиля
+        # Создание таблицы users для хранения режима работы, профиля и токенов API
         c.execute('''
                     CREATE TABLE IF NOT EXISTS users
                     (
@@ -60,6 +60,9 @@ def init_db() -> None:
                         telegram_username TEXT,
                         mode TEXT DEFAULT 'local',
                         profile_data TEXT,
+                        api_token_encrypted TEXT,
+                        refresh_token_encrypted TEXT,
+                        token_expires_at TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')

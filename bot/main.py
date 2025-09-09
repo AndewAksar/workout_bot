@@ -92,28 +92,36 @@ from bot.handlers.mode_handlers import (
     confirm_switch_mode,
     cancel_switch,
 )
-
+from bot.handlers.api_auth import (
+    start_registration,
+    reg_login,
+    reg_email,
+    reg_password,
+    reg_confirm,
+    reg_phone,
+    reg_name,
+    reg_gender,
+    reg_birthdate,
+    start_login,
+    login_email,
+    login_password,
+    cancel as auth_cancel,
+    REG_LOGIN,
+    REG_EMAIL,
+    REG_PASSWORD,
+    REG_CONFIRM,
+    REG_PHONE,
+    REG_NAME,
+    REG_GENDER,
+    REG_BIRTHDATE,
+    LOGIN_EMAIL,
+    LOGIN_PASSWORD,
+)
 
 # Инициализация логгера для записи событий и ошибок
 logger = setup_logging()
 
-
 def main() -> None:
-    """
-    Основная функция для запуска Telegram-бота.
-    Описание:
-        Инициализирует базу данных, создает объект приложения Telegram-бота,
-        настраивает обработчики команд и callback-запросов, а также запускает
-        процесс polling для обработки входящих обновлений.
-    Аргументы: Нет
-    Возвращаемое значение: None
-    Исключения:
-        - RuntimeError: Если TELEGRAM_TOKEN не задан или недоступен.
-        - Exception: Общие ошибки, связанные с инициализацией базы данных или запуском бота.
-    Пример использования:
-        >>> main()
-        [Бот запускается, начинает обработку входящих сообщений]
-    """
     # Инициализация базы данных перед запуском бота
     init_db()
 
@@ -182,6 +190,36 @@ def main() -> None:
 
     # Регистрация обработчика ConversationHandler для обработки состояний
     application.add_handler(conv_handler)
+
+    # Регистрация обработчиков регистрации и входа
+    auth_registration = ConversationHandler(
+        entry_points=[CommandHandler("register", start_registration)],
+        states={
+            REG_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_login)],  # ввод логина
+            REG_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_email)],  # ввод email
+            REG_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_password)],  # ввод пароля
+            REG_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_confirm)],  # подтверждение
+            REG_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],  # телефон
+            REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name)],  # имя
+            REG_GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_gender)],  # пол
+            REG_BIRTHDATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_birthdate)],  # дата рождения
+        },
+        fallbacks=[CommandHandler("cancel", auth_cancel)],
+        per_chat=True,
+        per_user=True,
+    )
+    auth_login = ConversationHandler(
+        entry_points=[CommandHandler("login", start_login)],
+        states={
+            LOGIN_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_email)],
+            LOGIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
+        },
+        fallbacks=[CommandHandler("cancel", auth_cancel)],
+        per_chat=True,
+        per_user=True,
+    )
+    application.add_handler(auth_registration)
+    application.add_handler(auth_login)
 
     # Логирование успешного запуска бота
     logger.info("Бот запущен")
