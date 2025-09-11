@@ -11,7 +11,6 @@
 """
 
 import re
-from datetime import datetime
 from typing import Dict
 
 from telegram import Update
@@ -28,9 +27,9 @@ from bot.utils.logger import setup_logging
 logger = setup_logging()
 
 # Состояния диалогов
-# Расширены шаги регистрации для запроса полного набора данных
-REG_LOGIN, REG_EMAIL, REG_PASSWORD, REG_CONFIRM, REG_PHONE, REG_NAME, REG_GENDER, REG_BIRTHDATE = range(8)
-LOGIN_EMAIL, LOGIN_PASSWORD = range(8, 10)
+# Для регистрации достаточно логина, почты и пароля
+REG_LOGIN, REG_EMAIL, REG_PASSWORD, REG_CONFIRM = range(4)
+LOGIN_LOGIN, LOGIN_PASSWORD = range(4, 6)
 
 def _valid_email(email: str) -> bool:
     return re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", email) is not None
@@ -77,60 +76,10 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if update.message.text.strip() != context.user_data.get("reg_password"):
         await update.message.reply_text("⚠️ Пароли не совпадают. Введите пароль снова:")
         return REG_PASSWORD
-    await update.message.reply_text("📞 Введите номер телефона:")
-    return REG_PHONE
-
-
-async def reg_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Получение номера телефона."""
-    phone = update.message.text.strip()
-    if not phone.isdigit():
-        await update.message.reply_text("⚠️ Телефон должен содержать только цифры. Введите снова:")
-        return REG_PHONE
-    context.user_data["reg_phone"] = phone
-    await update.message.reply_text("👤 Введите имя:")
-    return REG_NAME
-
-
-async def reg_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Получение имени пользователя."""
-    name = update.message.text.strip()
-    if not name:
-        await update.message.reply_text("⚠️ Имя не может быть пустым. Введите снова:")
-        return REG_NAME
-    context.user_data["reg_name"] = name
-    await update.message.reply_text("⚧️ Укажите пол (male/female):")
-    return REG_GENDER
-
-
-async def reg_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Получение пола пользователя."""
-    gender = update.message.text.strip().lower()
-    if gender not in {"male", "female"}:
-        await update.message.reply_text("⚠️ Пол должен быть 'male' или 'female'. Введите снова:")
-        return REG_GENDER
-    context.user_data["reg_gender"] = gender
-    await update.message.reply_text("📅 Введите дату рождения (ГГГГ-ММ-ДД):")
-    return REG_BIRTHDATE
-
-
-async def reg_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Получение даты рождения и отправка данных в API."""
-    date_text = update.message.text.strip()
-    try:
-        birthdate = datetime.fromisoformat(date_text)
-    except ValueError:
-        await update.message.reply_text("⚠️ Неверный формат даты. Используйте ГГГГ-ММ-ДД:")
-        return REG_BIRTHDATE
-    context.user_data["reg_birthdate"] = birthdate.strftime("%Y-%m-%d %H:%M:%S")
     payload = {
         "login": context.user_data["reg_login"],
         "email": context.user_data["reg_email"],
         "password": context.user_data["reg_password"],
-        "phone": context.user_data["reg_phone"],
-        "name": context.user_data["reg_name"],
-        "gender": context.user_data["reg_gender"],
-        "birthDate": context.user_data["reg_birthdate"],
     }
     resp = await register_user(payload)
     if resp.status_code == 201:
@@ -145,16 +94,16 @@ async def reg_birthdate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def start_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["login_attempts"] = 0
-    await update.message.reply_text("✉️ Введите email:")
-    return LOGIN_EMAIL
+    await update.message.reply_text("👤 Введите логин:")
+    return LOGIN_LOGIN
 
 
-async def login_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    email = update.message.text.strip()
-    if not _valid_email(email):
-        await update.message.reply_text("⚠️ Неверный формат email. Попробуйте снова:")
-        return LOGIN_EMAIL
-    context.user_data["login_email"] = email
+async def login_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    login = update.message.text.strip()
+    if not login:
+        await update.message.reply_text("⚠️ Логин не может быть пустым. Введите снова:")
+        return LOGIN_LOGIN
+    context.user_data["login_login"] = login
     await update.message.reply_text("🔒 Введите пароль:")
     return LOGIN_PASSWORD
 
@@ -162,8 +111,8 @@ async def login_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["login_attempts"] += 1
     password = update.message.text.strip()
-    email = context.user_data["login_email"]
-    resp = await login_user(email, password)
+    login = context.user_data["login_login"]
+    resp = await login_user(login, password)
     if resp.status_code == 200:
         data = resp.json()
         save_api_tokens(

@@ -98,23 +98,15 @@ from bot.handlers.api_auth import (
     reg_email,
     reg_password,
     reg_confirm,
-    reg_phone,
-    reg_name,
-    reg_gender,
-    reg_birthdate,
     start_login,
-    login_email,
+    login_login,
     login_password,
     cancel as auth_cancel,
     REG_LOGIN,
     REG_EMAIL,
     REG_PASSWORD,
     REG_CONFIRM,
-    REG_PHONE,
-    REG_NAME,
-    REG_GENDER,
-    REG_BIRTHDATE,
-    LOGIN_EMAIL,
+    LOGIN_LOGIN,
     LOGIN_PASSWORD,
 )
 
@@ -199,10 +191,6 @@ def main() -> None:
             REG_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_email)],  # ввод email
             REG_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_password)],  # ввод пароля
             REG_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_confirm)],  # подтверждение
-            REG_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],  # телефон
-            REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name)],  # имя
-            REG_GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_gender)],  # пол
-            REG_BIRTHDATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_birthdate)],  # дата рождения
         },
         fallbacks=[CommandHandler("cancel", auth_cancel)],
         per_chat=True,
@@ -211,7 +199,7 @@ def main() -> None:
     auth_login = ConversationHandler(
         entry_points=[CommandHandler("login", start_login)],
         states={
-            LOGIN_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_email)],
+            LOGIN_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_login)],
             LOGIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
         },
         fallbacks=[CommandHandler("cancel", auth_cancel)],

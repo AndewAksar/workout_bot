@@ -26,7 +26,9 @@ async def _request(method: str, endpoint: str, token: Optional[str] = None,
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    url = f"{GYMSTAT_API_URL}{endpoint}"
+    base_url = GYMSTAT_API_URL.rstrip("/")
+    endpoint = endpoint.lstrip("/")
+    url = f"{base_url}/{endpoint}"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.request(method, url, headers=headers, json=json, params=params)
     if resp.status_code >= 400:
@@ -37,20 +39,20 @@ async def _request(method: str, endpoint: str, token: Optional[str] = None,
 
 
 async def register_user(payload: Dict[str, Any]) -> httpx.Response:
-    """Регистрация нового пользователя."""
-    # Согласно актуальной документации, регистрация выполняется по маршруту
-    # ``/api/users/register`` и требует передачи полного набора данных:
-    # логина, пароля, e-mail, телефона, имени, пола и даты рождения.
+    """Регистрация нового пользователя.
+    Обязательные поля: ``login``, ``email`` и ``password``. Остальные можно
+    передавать по необходимости.
+    """
     return await _request("POST", "/api/users/register", json=payload)
 
 
-async def login_user(email: str, password: str) -> httpx.Response:
+async def login_user(login: str, password: str) -> httpx.Response:
     """Авторизация пользователя и получение токенов."""
-    # Эндпоинт авторизации расположен по адресу ``/api/users/login``.
+    # Эндпоинт авторизации расположен по адресу ``/api/auth/login``.
     return await _request(
         "POST",
-        "/api/users/login",
-        json={"email": email, "password": password},
+        "/api/auth/login",
+        json={"login": login, "password": password},
     )
 
 
