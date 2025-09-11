@@ -78,3 +78,11 @@ async def get_trainings(
     """Получение списка тренировок пользователя."""
     # Список тренировок возвращается по маршруту ``/api/trainings``.
     return await _request("GET", "/api/trainings", token=token, params=params)
+
+
+async def get_weight_data(
+    token: str, params: Optional[Dict[str, Any]] = None
+) -> httpx.Response:
+    """Получение истории взвешиваний пользователя."""
+    # История взвешиваний доступна по адресу ``/api/weight-data``.
+    return await _request("GET", "/api/weight-data", token=token, params=params)

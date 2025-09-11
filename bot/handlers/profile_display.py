@@ -18,12 +18,16 @@ import httpx
 from datetime import date, datetime
 import html
 
-from bot.api.gym_stat_client import get_profile as api_get_profile
+from bot.api.gym_stat_client import (
+    get_profile as api_get_profile,
+    get_weight_data as api_get_weight_data,
+)
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.utils.api_session import get_valid_access_token
 from bot.utils.db_utils import get_user_mode
 from bot.utils.message_deletion import schedule_message_deletion
 from bot.utils.logger import setup_logging
+from bot.utils.formatters import format_gender
 from bot.config.settings import DB_PATH
 from telegram.error import (
     BadRequest,
@@ -101,13 +105,45 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             #     goals = ", ".join(str(g) for g in goals)
             # goals = esc(goals, "Не указаны")
 
+            last_weight_line = "Последнее взвешивание: <code>Не указано</code>\n"
+            try:
+                weight_resp = await api_get_weight_data(token)
+                if weight_resp.status_code == 200:
+                    weight_payload = weight_resp.json()
+                    items = []
+                    if isinstance(weight_payload, list):
+                        items = weight_payload
+                    elif isinstance(weight_payload, dict):
+                        if isinstance(weight_payload.get("data"), list):
+                            items = weight_payload["data"]
+                        elif isinstance(weight_payload.get("results"), list):
+                            items = weight_payload["results"]
+                    if items:
+                        items.sort(key=lambda x: x.get("date", ""), reverse=True)
+                        latest = items[0]
+                        w = latest.get("weight")
+                        d_raw = latest.get("date")
+                        if w is not None and d_raw:
+                            try:
+                                d_fmt = datetime.fromisoformat(d_raw.split("T")[0]).strftime("%d.%m.%Y")
+                            except ValueError:
+                                d_fmt = d_raw
+                            last_weight_line = (
+                                f"Вес: <code>{esc(w)}</code> кг от <code>{esc(d_fmt)}</code>\n"
+                            )
+            except Exception as e:
+                logger.error(
+                    "Ошибка получения данных взвешивания для пользователя %s: %s",
+                    user_id,
+                    str(e),
+                )
             greeting = (
                 f"<b>Ваш профиль на Gym-Stat:</b>\n"
                 f"👤 Имя: <code>{esc(data.get('name'))}</code>\n"
                 f"Дата рождения: <code>{html.escape(birth_date)}</code>\n"
-                f"Вес: <code>{esc(data.get('weight'))}</code> кг\n"
+                f"{last_weight_line}"
                 f"Рост: <code>{esc(data.get('height'))}</code> см\n"
-                f"Пол: <code>{esc(data.get('gender'))}</code>\n\n"
+                f"Пол: <code>{format_gender(data.get('gender'))}</code>\n\n"
                 f"📧 Email: <code>{esc(data.get('email'))}</code>\n"
                 # f"🎯 Цели: <code>{goals}</code>"
             )
