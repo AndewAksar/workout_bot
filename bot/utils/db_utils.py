@@ -30,7 +30,12 @@ def get_user_mode(user_id: int) -> str:
     finally:
         conn.close()
 
-def save_api_tokens(user_id: int, access_encrypted: str, refresh_encrypted: str, expires_in: int) -> None:
+def save_api_tokens(
+    user_id: int,
+    access_encrypted: str,
+    refresh_encrypted: Optional[str],
+    expires_in: int,
+) -> None:
     """Сохраняет токены Gym-Stat в базе данных."""
     expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
     conn = sqlite3.connect(DB_PATH)
@@ -44,7 +49,7 @@ def save_api_tokens(user_id: int, access_encrypted: str, refresh_encrypted: str,
     finally:
         conn.close()
 
-def get_api_tokens(user_id: int) -> Optional[Tuple[str, str, str]]:
+def get_api_tokens(user_id: int) -> Optional[Tuple[str, Optional[str], str]]:
     """Возвращает токены и время истечения."""
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -54,6 +59,6 @@ def get_api_tokens(user_id: int) -> Optional[Tuple[str, str, str]]:
             (user_id,),
         )
         row = c.fetchone()
-        return row if row and row[0] and row[1] else None
+        return row if row and row[0] and row[2] else None
     finally:
         conn.close()

@@ -26,10 +26,15 @@ async def get_valid_access_token(user_id: int) -> Optional[str]:
     if not tokens:
         return None
     access_enc, refresh_enc, expires_at_str = tokens
-    if not access_enc or not refresh_enc or not expires_at_str:
+    if not access_enc or not expires_at_str:
         return None
     expires_at = datetime.fromisoformat(expires_at_str)
     if datetime.utcnow() > expires_at - timedelta(seconds=300):
+        if not refresh_enc:
+            logger.warning(
+                "Отсутствует refresh_token; требуется повторная авторизация"
+            )
+            return None
         refresh = decrypt_token(refresh_enc)
         resp = await api_refresh(refresh)
         if resp.status_code != 200:
@@ -37,6 +42,9 @@ async def get_valid_access_token(user_id: int) -> Optional[str]:
             return None
         data = resp.json()
         new_access = data.get("access_token")
+        if not new_access:
+            logger.error("Ответ API не содержит нового access_token: %s", data)
+            return None
         expires_in = data.get("expires_in", 3600)
         save_api_tokens(user_id, encrypt_token(new_access), refresh_enc, expires_in)
         return new_access

@@ -115,10 +115,20 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     resp = await login_user(login, password)
     if resp.status_code == 200:
         data = resp.json()
+        access = data.get("access_token")
+        refresh = data.get("refresh_token")
+        if not access:
+            logger.error("Сервер авторизации не вернул access_token: %s", data)
+            await update.message.reply_text(
+                "❌ Авторизация не удалась: сервер не вернул access_token"
+            )
+            return ConversationHandler.END
+        if not refresh:
+            logger.warning("Сервер не вернул refresh_token: %s", data)
         save_api_tokens(
             update.message.from_user.id,
-            encrypt_token(data.get("access_token")),
-            encrypt_token(data.get("refresh_token")),
+            encrypt_token(access),
+            encrypt_token(refresh) if refresh else None,
             data.get("expires_in", 3600),
         )
         await update.message.reply_text("✅ Вы вошли! Используйте /profile или /trainings")
