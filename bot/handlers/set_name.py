@@ -18,9 +18,12 @@ import sqlite3
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
+from bot.api.gym_stat_client import update_profile
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.utils.logger import setup_logging
 from bot.utils.message_deletion import schedule_message_deletion
+from bot.utils.db_utils import get_user_mode
+from bot.utils.api_session import get_valid_access_token
 from bot.config.settings import (
     DB_PATH,
     SET_NAME
@@ -69,58 +72,123 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return SET_NAME
 
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
-        if not c.fetchone():
-            c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
+    mode = get_user_mode(user_id)
+    if mode == 'api':
+        token = await get_valid_access_token(user_id)
+        if not token:
+            error_message = await update.message.reply_text(
+                "🔐 Требуется вход. Используйте /login.",
+                reply_markup=get_personal_data_menu(),
+            )
+            await schedule_message_deletion(
+                context,
+                [user_message_id, error_message.message_id],
+                chat_id,
+                delay=5,
+            )
+            context.user_data['conversation_active'] = False
+            return ConversationHandler.END
+        try:
+            resp = await update_profile(token, {"name": name})
+        except Exception as e:
+            logger.error(
+                f"Ошибка при запросе обновления имени через API для пользователя {user_id}: {str(e)}"
+            )
+            error_message = await update.message.reply_text(
+                "⚠️ Не удалось сохранить имя. Попробуйте позже.",
+                reply_markup=get_personal_data_menu(),
+            )
+            await schedule_message_deletion(
+                context,
+                [user_message_id, error_message.message_id],
+                chat_id,
+                delay=5,
+            )
+            context.user_data['conversation_active'] = False
+            return ConversationHandler.END
+        if resp.status_code != 200:
+            logger.warning(
+                "Не удалось обновить имя через API для пользователя %s: %s %s",
+                user_id,
+                resp.status_code,
+                resp.text,
+            )
+            error_message = await update.message.reply_text(
+                "⚠️ Не удалось сохранить имя. Попробуйте снова.",
+                reply_markup=get_personal_data_menu(),
+            )
+            await schedule_message_deletion(
+                context,
+                [user_message_id, error_message.message_id],
+                chat_id,
+                delay=5,
+            )
+            context.user_data['conversation_active'] = False
+            return ConversationHandler.END
+    else:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
+            if not c.fetchone():
+                c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
+                conn.commit()
+                logger.info(f"Создана новая запись для пользователя {user_id}")
+            c.execute("UPDATE UserSettings SET name = ? WHERE user_id = ?", (name, user_id))
             conn.commit()
-            logger.info(f"Создана новая запись для пользователя {user_id}")
-        c.execute("UPDATE UserSettings SET name = ? WHERE user_id = ?", (name, user_id))
-        conn.commit()
-        logger.info(f"Имя успешно обновлено для пользователя {user_id}: {name}")
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка базы данных при обновлении имени для пользователя {user_id}: {str(e)}")
-        error_message = await update.message.reply_text(
-            "⚠️ Произошла ошибка при сохранении имени. Попробуйте снова.",
-            reply_markup=get_personal_data_menu()
-        )
-        await schedule_message_deletion(
-            context,
-            [user_message_id, error_message.message_id],
-            chat_id,
-            delay=5
-        )
-        conn.close()
-        context.user_data['conversation_active'] = False
-        return ConversationHandler.END
-    except Exception as e:
-        logger.error(f"Ошибка при обработке ввода имени для пользователя {user_id}: {str(e)}")
-        conn.close()
-        context.user_data['conversation_active'] = False
-        return ConversationHandler.END
-    finally:
-        conn.close()
+            logger.info(f"Имя успешно обновлено для пользователя {user_id}: {name}")
+        except sqlite3.Error as e:
+            logger.error(
+                f"Ошибка базы данных при обновлении имени для пользователя {user_id}: {str(e)}"
+            )
+            error_message = await update.message.reply_text(
+                "⚠️ Произошла ошибка при сохранении имени. Попробуйте снова.",
+                reply_markup=get_personal_data_menu(),
+            )
+            await schedule_message_deletion(
+                context,
+                [user_message_id, error_message.message_id],
+                chat_id,
+                delay=5,
+            )
+            conn.close()
+            context.user_data['conversation_active'] = False
+            return ConversationHandler.END
+        except Exception as e:
+            logger.error(
+                f"Ошибка при обработке ввода имени для пользователя {user_id}: {str(e)}"
+            )
+            conn.close()
+            context.user_data['conversation_active'] = False
+            return ConversationHandler.END
+        finally:
+            conn.close()
 
     try:
         await update.message.reply_text(
             f"✅ Имя обновлено: {name}",
-            reply_markup=get_personal_data_menu()
+            reply_markup=get_personal_data_menu(),
         )
-        logger.info(f"Сообщение об успешном обновлении имени отправлено пользователю {user_id}")
+        logger.info(
+            f"Сообщение об успешном обновлении имени отправлено пользователю {user_id}"
+        )
         await schedule_message_deletion(
             context,
             [user_message_id],
             chat_id,
-            delay=5
+            delay=5,
         )
     except Exception as e:
-        logger.error(f"Ошибка при отправке сообщения подтверждения пользователю {user_id}: {str(e)}")
+        logger.error(
+            f"Ошибка при отправке сообщения подтверждения пользователю {user_id}: {str(e)}"
+        )
         context.user_data['conversation_active'] = False
         return ConversationHandler.END
 
-    logger.debug(f"Завершение обработки ввода имени для пользователя {user_id}")
+    logger.debug(
+        f"Завершение обработки ввода имени для пользователя {user_id}"
+    )
     context.user_data['conversation_active'] = False
     context.user_data.pop('current_state', None)
     return ConversationHandler.END
+

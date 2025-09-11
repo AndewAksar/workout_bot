@@ -72,6 +72,18 @@ async def get_profile(token: str) -> httpx.Response:
     return await _request("GET", "/api/users/me", token=token)
 
 
+async def update_profile(token: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Обновление данных профиля пользователя.
+    Отправляет PATCH-запрос на эндпоинт ``/api/users/me`` с указанными данными.
+    Args:
+        token: Текущий access-токен пользователя.
+        payload: Словарь с полями профиля для обновления.
+    Returns:
+        httpx.Response: Ответ сервера Gym-Stat.
+    """
+    return await _request("PATCH", "/api/users/me", token=token, json=payload)
+
+
 async def get_trainings(
     token: str, params: Optional[Dict[str, Any]] = None
 ) -> httpx.Response:
