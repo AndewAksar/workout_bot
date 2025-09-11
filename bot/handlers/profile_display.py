@@ -14,6 +14,9 @@
 import sqlite3
 from telegram import Update
 from telegram.ext import ContextTypes
+import httpx
+from datetime import date, datetime
+import html
 
 from bot.api.gym_stat_client import get_profile as api_get_profile
 from bot.keyboards.settings_menu import get_settings_menu
@@ -22,7 +25,10 @@ from bot.utils.db_utils import get_user_mode
 from bot.utils.message_deletion import schedule_message_deletion
 from bot.utils.logger import setup_logging
 from bot.config.settings import DB_PATH
-from telegram.error import BadRequest
+from telegram.error import (
+    BadRequest,
+    TelegramError
+)
 
 
 logger = setup_logging()
@@ -35,9 +41,8 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     chat_id = query.message.chat_id
     logger.info("Пользователь %s запросил профиль", user_id)
 
-    mode = get_user_mode(user_id)
-
     try:
+        mode = get_user_mode(user_id)
         if mode == "api":
             token = await get_valid_access_token(user_id)
             if not token:
@@ -46,7 +51,15 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     reply_markup=get_settings_menu(),
                 )
                 return
-            resp = await api_get_profile(token)
+            try:
+                resp = await api_get_profile(token)
+            except httpx.HTTPError as e:
+                logger.error("Ошибка запроса профиля для пользователя %s: %s", user_id, str(e))
+                await query.message.edit_text(
+                    "❌ Не удалось получить профиль. Попробуйте позже.",
+                    reply_markup=get_settings_menu(),
+                )
+                return
             if resp.status_code != 200:
                 logger.warning(
                     "Профиль не получен: %s %s", resp.status_code, resp.text
@@ -56,15 +69,47 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     reply_markup=get_settings_menu(),
                 )
                 return
-            data = resp.json()
+            try:
+                data = resp.json()
+            except ValueError as e:
+                logger.error("Некорректный ответ профиля для пользователя %s: %s", user_id, str(e))
+                await query.message.edit_text(
+                    "❌ Не удалось получить профиль. Попробуйте позже.",
+                    reply_markup=get_settings_menu(),
+                )
+                return
+            birth_date_raw = data.get("birthDate")
+            birth_date = "Не указана"
+            if birth_date_raw:
+                try:
+                    birth_dt = date.fromisoformat(birth_date_raw.split("T")[0])
+                    today = date.today()
+                    age = today.year - birth_dt.year - (
+                            (today.month, today.day) < (birth_dt.month, birth_dt.day)
+                    )
+                    birth_date = f"{birth_dt.strftime('%d.%m.%Y')}({age})"
+                except ValueError:
+                    birth_date = birth_date_raw
+
+            def esc(value: str | None, default: str = "Не указан") -> str:
+                if value is None:
+                    return default
+                return html.escape(str(value))
+
+            # goals = data.get("goals")
+            # if isinstance(goals, list):
+            #     goals = ", ".join(str(g) for g in goals)
+            # goals = esc(goals, "Не указаны")
+
             greeting = (
                 f"<b>Ваш профиль на Gym-Stat:</b>\n"
-                f"👤 Имя: <code>{data.get('name') or 'Не указано'}</code>\n"
-                f"📧 Email: <code>{data.get('email')}</code>\n"
-                f"Возраст: <code>{data.get('age') or 'Не указан'}</code>\n"
-                f"Вес: <code>{data.get('weight') or 'Не указан'}</code> кг\n"
-                f"Рост: <code>{data.get('height') or 'Не указан'}</code> см\n"
-                f"Цели: <code>{data.get('goals') or 'Не указаны'}</code>"
+                f"👤 Имя: <code>{esc(data.get('name'))}</code>\n"
+                f"Дата рождения: <code>{html.escape(birth_date)}</code>\n"
+                f"Вес: <code>{esc(data.get('weight'))}</code> кг\n"
+                f"Рост: <code>{esc(data.get('height'))}</code> см\n"
+                f"Пол: <code>{esc(data.get('gender'))}</code>\n\n"
+                f"📧 Email: <code>{esc(data.get('email'))}</code>\n"
+                # f"🎯 Цели: <code>{goals}</code>"
             )
         else:
             conn = sqlite3.connect(DB_PATH)
@@ -89,6 +134,9 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except sqlite3.Error as e:
         logger.error("Ошибка при отображении профиля для пользователя %s: %s", user_id, str(e))
         greeting = "❌ Произошла ошибка при отображении профиля."
+    except Exception as e:
+        logger.exception("Непредвиденная ошибка при отображении профиля для пользователя %s", user_id)
+        greeting = "❌ Не удалось получить профиль. Попробуйте позже."
     finally:
         if 'conn' in locals():
             conn.close()
@@ -106,4 +154,17 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             parse_mode="HTML",
             reply_markup=get_settings_menu(),
         )
-        await schedule_message_deletion(context, [sent_message.message_id], chat_id, delay=5)
+        await schedule_message_deletion(
+            context, [sent_message.message_id], chat_id, delay=5
+        )
+    except TelegramError as e:
+        logger.error(
+            "Ошибка Telegram при отправке профиля пользователю %s: %s", user_id, str(e)
+        )
+        sent_message = await query.message.reply_text(
+            "⚠️ Произошла ошибка. Попробуйте снова.",
+            reply_markup=get_settings_menu(),
+        )
+        await schedule_message_deletion(
+            context, [sent_message.message_id], chat_id, delay=5
+        )

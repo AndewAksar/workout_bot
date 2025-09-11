@@ -68,8 +68,8 @@ async def refresh_token(refresh_token: str) -> httpx.Response:
 
 async def get_profile(token: str) -> httpx.Response:
     """Получение данных профиля пользователя."""
-    # Данные профиля доступны по адресу ``/api/users/profile``.
-    return await _request("GET", "/api/users/profile", token=token)
+    # Данные профиля доступны по адресу ``/api/users/me``.
+    return await _request("GET", "/api/users/me", token=token)
 
 
 async def get_trainings(

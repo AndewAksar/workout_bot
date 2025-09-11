@@ -20,9 +20,6 @@ def get_settings_menu():
         [
             InlineKeyboardButton(
                 "📋 Личные данные", callback_data='personal_data'
-            ),
-            InlineKeyboardButton(
-                "🏋️ Тренировки", callback_data='training_settings'
             )
         ],
         [
