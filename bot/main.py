@@ -209,6 +209,9 @@ def main() -> None:
     application.add_handler(auth_registration)
     application.add_handler(auth_login)
 
+    # Глобальный обработчик /cancel на случай вызова вне активного диалога
+    application.add_handler(CommandHandler("cancel", cancel))
+
     # Логирование успешного запуска бота
     logger.info("Бот запущен")
 
