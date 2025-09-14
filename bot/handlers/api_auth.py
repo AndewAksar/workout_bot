@@ -12,17 +12,27 @@
 
 import re
 from typing import Dict
-
+from datetime import date, datetime
+import html
 from telegram import Update
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
 
+from bot.api.gym_stat_client import (
+    register_user,
+    login_user,
+    get_profile,
+    get_weight_data,
+)
 from bot.api.gym_stat_client import register_user, login_user
 from bot.utils.encryption import encrypt_token
 from bot.utils.db_utils import save_api_tokens
 from bot.utils.logger import setup_logging
+from bot.keyboards.main_menu import get_main_menu
+from bot.utils.formatters import format_gender
+
 
 logger = setup_logging()
 
@@ -145,7 +155,84 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             encrypt_token(refresh) if refresh else None,
             data.get("expires_in", 3600),
         )
-        await update.message.reply_text("✅ Вы вошли! Используйте /profile или /trainings")
+        # Получаем данные профиля пользователя
+        profile_text = "<b>Профиль не найден.</b>"
+        try:
+            prof_resp = await get_profile(access)
+            if prof_resp.status_code == 200:
+                prof = prof_resp.json()
+
+                birth_raw = prof.get("birthDate")
+                birth_fmt = "Не указана"
+                if birth_raw:
+                    try:
+                        bd = date.fromisoformat(birth_raw.split("T")[0])
+                        today = date.today()
+                        age = today.year - bd.year - (
+                                (today.month, today.day) < (bd.month, bd.day)
+                        )
+                        birth_fmt = f"{bd.strftime('%d.%m.%Y')}({age})"
+                    except ValueError:
+                        birth_fmt = birth_raw
+
+                def esc(val, default="Не указан"):
+                    return html.escape(str(val)) if val is not None else default
+
+                weight_line = "Вес: <code>Не указан</code>\n"
+                try:
+                    w_resp = await get_weight_data(access)
+                    if w_resp.status_code == 200:
+                        payload = w_resp.json()
+                        items = []
+                        if isinstance(payload, list):
+                            items = payload
+                        elif isinstance(payload, dict):
+                            if isinstance(payload.get("data"), list):
+                                items = payload["data"]
+                            elif isinstance(payload.get("results"), list):
+                                items = payload["results"]
+                        if items:
+                            items.sort(key=lambda x: x.get("date", ""), reverse=True)
+                            latest = items[0]
+                            w = latest.get("weight")
+                            d_raw = latest.get("date")
+                            if w is not None and d_raw:
+                                try:
+                                    d_fmt = datetime.fromisoformat(
+                                        d_raw.split("T")[0]
+                                    ).strftime("%d.%m.%Y")
+                                except ValueError:
+                                    d_fmt = d_raw
+                                weight_line = (
+                                    f"Вес: <code>{esc(w)}</code> кг от <code>{esc(d_fmt)}</code>\n"
+                                )
+                except Exception as e:
+                    logger.error(
+                        "Ошибка получения веса для пользователя %s: %s",
+                        update.message.from_user.id,
+                        str(e),
+                    )
+
+                profile_text = (
+                    f"<b>Привет, {esc(prof.get('name')) or 'пользователь'}! 👋</b>\n"
+                    f"👤 Имя: <code>{esc(prof.get('name'))}</code>\n"
+                    f"Дата рождения: <code>{html.escape(birth_fmt)}</code>\n"
+                    f"{weight_line}"
+                    f"Рост: <code>{esc(prof.get('height'))}</code> см\n"
+                    f"Пол: <code>{format_gender(prof.get('gender'))}</code>"
+                )
+        except Exception as e:
+            logger.error(
+                "Не удалось получить профиль пользователя %s: %s",
+                update.message.from_user.id,
+                str(e),
+            )
+
+        await update.message.reply_text(
+            profile_text,
+            parse_mode="HTML",
+            reply_markup=get_main_menu(),
+        )
         return ConversationHandler.END
     if resp.status_code == 401 and context.user_data["login_attempts"] < 3:
         await update.message.reply_text("❌ Неверные данные. Попробуйте снова:")
