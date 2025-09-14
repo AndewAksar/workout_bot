@@ -176,6 +176,8 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(switch_mode_prompt, pattern='^switch_mode$'))
     application.add_handler(CallbackQueryHandler(confirm_switch_mode, pattern='^confirm_switch_(local|api)$'))
     application.add_handler(CallbackQueryHandler(cancel_switch, pattern='^cancel_switch$'))
+    application.add_handler(CallbackQueryHandler(start_registration, pattern='^register$'))
+    application.add_handler(CallbackQueryHandler(start_login, pattern='^login$'))
 
     # Регистрация обработчика для AI-консультации
     application.add_error_handler(ai_error_handler)
@@ -185,7 +187,10 @@ def main() -> None:
 
     # Регистрация обработчиков регистрации и входа
     auth_registration = ConversationHandler(
-        entry_points=[CommandHandler("register", start_registration)],
+        entry_points=[
+            CommandHandler("register", start_registration),
+            CallbackQueryHandler(start_registration, pattern='^register$'),
+        ],
         states={
             REG_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_login)],  # ввод логина
             REG_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_email)],  # ввод email
@@ -197,7 +202,10 @@ def main() -> None:
         per_user=True,
     )
     auth_login = ConversationHandler(
-        entry_points=[CommandHandler("login", start_login)],
+        entry_points=[
+            CommandHandler("login", start_login),
+            CallbackQueryHandler(start_login, pattern='^login$'),
+        ],
         states={
             LOGIN_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_login)],
             LOGIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],

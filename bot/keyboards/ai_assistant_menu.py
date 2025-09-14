@@ -11,7 +11,7 @@ def get_ai_assistant_menu():
         ],
         [
             InlineKeyboardButton(
-                "🔙 Назад", callback_data='settings'
+                "🔙 Назад", callback_data='main_menu'
             )
         ]
     ]
@@ -25,6 +25,6 @@ def get_model_selection_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🌐 ChatGPT", callback_data="start_chatgpt"),
             InlineKeyboardButton("🇷🇺 GigaChat", callback_data="start_gigachat"),
         ],
-        [InlineKeyboardButton("🔙 Назад", callback_data="settings")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="main_menu")],
     ]
     return InlineKeyboardMarkup(keyboard)

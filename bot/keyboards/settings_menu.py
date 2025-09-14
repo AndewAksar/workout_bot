@@ -18,19 +18,8 @@ from telegram import (
 def get_settings_menu():
     keyboard = [
         [
-            InlineKeyboardButton(
-                "📋 Личные данные", callback_data='personal_data'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "👤 Показать профиль", callback_data='show_profile'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🔄 Сменить режим", callback_data='switch_mode'
-            )
+            InlineKeyboardButton("📋 Личные данные", callback_data='personal_data'),
+            InlineKeyboardButton("👤 Показать профиль", callback_data='show_profile')
         ],
         [
             InlineKeyboardButton(

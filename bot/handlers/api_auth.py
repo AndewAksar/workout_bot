@@ -36,8 +36,15 @@ def _valid_email(email: str) -> bool:
 
 
 async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начало диалога регистрации (как по команде, так и по кнопке)."""
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        message = query.message
+    else:
+        message = update.message
     # Первым шагом запрашиваем логин, т.к. он обязателен при регистрации на сайте
-    await update.message.reply_text("👤 Введите логин:")
+    await message.reply_text("👤 Введите логин:")
     return REG_LOGIN
 
 
@@ -93,8 +100,15 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def start_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начало диалога авторизации (поддерживает кнопку и команду)."""
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        message = query.message
+    else:
+        message = update.message
     context.user_data["login_attempts"] = 0
-    await update.message.reply_text("👤 Введите логин:")
+    await message.reply_text("👤 Введите логин:")
     return LOGIN_LOGIN
 
 
