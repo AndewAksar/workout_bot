@@ -14,6 +14,7 @@
 """
 
 import logging
+import asyncio
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -234,12 +235,19 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 logger.debug(f"Сохранён last_ai_response_id для разбитого ответа: {messages[-1]}")
 
         return AI_CONSULTATION  # Остаемся в состоянии для продолжения диалога
-    except Exception as e:
-        logger.error(f"Ошибка в handle_ai_message для пользователя {user_id}: {e}")
-        await update.callback_query.message.reply_text(
-            "⚠️ Произошла ошибка. Консультация завершена.",
-            parse_mode=ParseMode.HTML
-        )
+    except Exception:
+        logger.exception(f"Ошибка в handle_ai_message для пользователя {user_id}")
+        if update.message:
+            await update.message.reply_text(
+                "⚠️ Произошла ошибка. Консультация завершена.",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Произошла ошибка. Консультация завершена.",
+                parse_mode=ParseMode.HTML
+            )
 
         # Сбрасываем флаг диалога
         context.user_data['conversation_active'] = False
@@ -300,21 +308,25 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.debug("Ошибка 'Message is not modified' проигнорирована")
         return
 
+    has_user_data = hasattr(context, "user_data") and isinstance(getattr(context, "user_data", None), dict)
+
+    def clear_user_data() -> None:
+        if not has_user_data:
+            return
+        context.user_data['conversation_active'] = False
+        for key in (
+                'ai_history',
+                'start_ai_message_id',
+                'last_ai_response_id',
+                'start_keyboard_removed',
+                'ai_model',
+        ):
+            context.user_data.pop(key, None)
+
     # Проверяем, что update существует
     if update is None:
         logger.error("Update is None in ai_error_handler")
-        # Сбрасываем состояние, но не отправляем сообщение, так как нет chat_id
-        context.user_data['conversation_active'] = False
-        if 'ai_history' in context.user_data:
-            del context.user_data['ai_history']
-        if 'start_ai_message_id' in context.user_data:
-            del context.user_data['start_ai_message_id']
-        if 'last_ai_response_id' in context.user_data:
-            del context.user_data['last_ai_response_id']
-        if 'start_keyboard_removed' in context.user_data:
-            del context.user_data['start_keyboard_removed']
-        if 'ai_model' in context.user_data:
-            del context.user_data['ai_model']
+        clear_user_data()
         return
 
     chat_id = None
@@ -328,18 +340,7 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         chat_id = update.message.chat_id
     else:
         logger.error("Update не содержит ни callback_query, ни message")
-        # Сбрасываем состояние
-        context.user_data['conversation_active'] = False
-        if 'ai_history' in context.user_data:
-            del context.user_data['ai_history']
-        if 'start_ai_message_id' in context.user_data:
-            del context.user_data['start_ai_message_id']
-        if 'last_ai_response_id' in context.user_data:
-            del context.user_data['last_ai_response_id']
-        if 'start_keyboard_removed' in context.user_data:
-            del context.user_data['start_keyboard_removed']
-        if 'ai_model' in context.user_data:
-            del context.user_data['ai_model']
+        clear_user_data()
         return
 
     try:
@@ -347,24 +348,46 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             chat_id=chat_id,
             text="⚠️ Произошла ошибка. Попробуйте снова.",
             reply_markup=get_main_menu(),
-            parse_mode = ParseMode.HTML
+            parse_mode=ParseMode.HTML,
         )
         await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
 
+    except TelegramError as send_error:
+        if "Bad Gateway" in str(send_error):
+            for attempt in range(3):
+                delay = 2 ** attempt
+                logger.warning(
+                    f"Bad Gateway при отправке сообщения в чат {chat_id}. Повтор через {delay} с (попытка {attempt + 1})"
+                )
+                await asyncio.sleep(delay)
+                try:
+                    message = await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="⚠️ Произошла ошибка. Попробуйте снова.",
+                        reply_markup=get_main_menu(),
+                        parse_mode=ParseMode.HTML,
+                    )
+                    await schedule_message_deletion(
+                        context, [message.message_id], chat_id, delay=5
+                    )
+                    break
+                except TelegramError as retry_error:
+                    if "Bad Gateway" not in str(retry_error) or attempt == 2:
+                        logger.error(
+                            f"Ошибка при повторной отправке сообщения в чате {chat_id}: {retry_error}"
+                        )
+                        break
+        else:
+            logger.error(
+                f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}"
+            )
+
     except Exception as send_error:
-        logger.error(f"Ошибка при отправке сообщения об ошибке в чате {chat_id}: {send_error}")
+        logger.error(
+            f"Непредвиденная ошибка при отправке сообщения в чате {chat_id}: {send_error}"
+        )
 
     # Сбрасываем состояние
-    context.user_data['conversation_active'] = False
-    if 'ai_history' in context.user_data:
-        del context.user_data['ai_history']
-    if 'start_ai_message_id' in context.user_data:
-        del context.user_data['start_ai_message_id']
-    if 'last_ai_response_id' in context.user_data:
-        del context.user_data['last_ai_response_id']
-    if 'start_keyboard_removed' in context.user_data:
-        del context.user_data['start_keyboard_removed']
-    if 'ai_model' in context.user_data:
-        del context.user_data['ai_model']
+    clear_user_data()
 
     return ConversationHandler.END
