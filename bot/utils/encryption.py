@@ -8,7 +8,11 @@
 """
 
 from typing import Optional
-from cryptography.fernet import Fernet
+from cryptography.fernet import (
+    Fernet,
+    InvalidToken
+)
+
 
 from bot.utils.logger import setup_logging
 from bot.config.settings import ENCRYPT_KEY
@@ -27,11 +31,15 @@ def encrypt_token(token: Optional[str]) -> Optional[str]:
         return None
     return fernet.encrypt(token.encode()).decode()
 
-def decrypt_token(token_encrypted: str) -> str:
+def decrypt_token(token_encrypted: str) -> Optional[str]:
     """Расшифровывает строку токена.
-    Если ``token_encrypted`` пустой или ``None``, возвращает ``None``.
+    Если ``token_encrypted`` пустой или недействителен, возвращает ``None``.
     """
     if not token_encrypted:
         logger.warning("decrypt_token получил пустое значение токена")
         return None
-    return fernet.decrypt(token_encrypted.encode()).decode()
+    try:
+        return fernet.decrypt(token_encrypted.encode()).decode()
+    except InvalidToken:
+        logger.error("Не удалось расшифровать токен: неверная сигнатура")
+        return None

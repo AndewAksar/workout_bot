@@ -30,6 +30,7 @@ def get_user_mode(user_id: int) -> str:
     finally:
         conn.close()
 
+
 def save_api_tokens(
     user_id: int,
     access_encrypted: str,
@@ -49,6 +50,7 @@ def save_api_tokens(
     finally:
         conn.close()
 
+
 def get_api_tokens(user_id: int) -> Optional[Tuple[str, Optional[str], str]]:
     """Возвращает токены и время истечения."""
     conn = sqlite3.connect(DB_PATH)
@@ -60,5 +62,19 @@ def get_api_tokens(user_id: int) -> Optional[Tuple[str, Optional[str], str]]:
         )
         row = c.fetchone()
         return row if row and row[0] and row[2] else None
+    finally:
+        conn.close()
+
+
+def clear_api_tokens(user_id: int) -> None:
+    """Удаляет сохранённые токены Gym-Stat."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        c = conn.cursor()
+        c.execute(
+            "UPDATE users SET api_token_encrypted = NULL, refresh_token_encrypted = NULL, token_expires_at = NULL WHERE user_id = ?",
+            (user_id,),
+        )
+        conn.commit()
     finally:
         conn.close()

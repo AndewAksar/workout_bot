@@ -22,7 +22,10 @@ import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from bot.config.settings import DB_PATH, GYMSTAT_API_URL
+from bot.config.settings import (
+    DB_PATH,
+    GYMSTAT_API_URL
+)
 from bot.keyboards.main_menu import get_main_menu
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.mode_selection import (
@@ -78,11 +81,11 @@ async def _api_available() -> bool:
     """Проверяет доступность API Gym-Stat."""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{GYMSTAT_API_URL}/ping")
+            resp = await client.get(GYMSTAT_API_URL)
     except Exception as e:
         logger.exception("Ошибка при проверке API: %s", e)
         return False
-    if resp.status_code != 200:
+    if resp.status_code >= 500:
         logger.warning(
             "Проверка API Gym-Stat вернула %s: %s", resp.status_code, resp.text
         )

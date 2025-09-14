@@ -176,8 +176,6 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(switch_mode_prompt, pattern='^switch_mode$'))
     application.add_handler(CallbackQueryHandler(confirm_switch_mode, pattern='^confirm_switch_(local|api)$'))
     application.add_handler(CallbackQueryHandler(cancel_switch, pattern='^cancel_switch$'))
-    application.add_handler(CallbackQueryHandler(start_registration, pattern='^register$'))
-    application.add_handler(CallbackQueryHandler(start_login, pattern='^login$'))
 
     # Регистрация обработчика для AI-консультации
     application.add_error_handler(ai_error_handler)

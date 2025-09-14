@@ -21,8 +21,12 @@ from telegram.ext import ContextTypes
 from bot.config.settings import WELCOME_MESSAGE, DB_PATH
 from bot.keyboards.main_menu import get_main_menu
 from bot.utils.logger import setup_logging
-from bot.keyboards.mode_selection import get_mode_selection_keyboard
+from bot.keyboards.mode_selection import (
+    get_mode_selection_keyboard,
+    get_api_auth_keyboard
+)
 from bot.utils.message_deletion import schedule_message_deletion
+from bot.utils.api_session import get_valid_access_token
 
 
 logger = setup_logging()
@@ -59,9 +63,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         if not user_record:
             c.execute(
-            "INSERT INTO users (user_id, telegram_username, mode) VALUES (?, ?, 'local')",
-            (user_id, username),
+                "INSERT INTO users (user_id, telegram_username, mode) VALUES (?, ?, 'local')",
+                (user_id, username),
             )
+            mode = "local"
+        else:
+            mode = user_record[0]
 
         c.execute(
             "INSERT OR IGNORE INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
@@ -99,23 +106,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"<b>Привет, {profile[0] or username}! 👋</b>\n"
             f"Твой ID: <code>{user_id}</code>\n"
         )
-        # Проверка наличия дополнительных данных профиля
-        if profile and any(profile[1:]):
-            greeting += (
-                f"\n📋 <b>Твой профиль:</b>\n"
-                f"Возраст: {profile[1] if profile[1] else 'Не указан'}\n"
-                f"Вес: {profile[2] if profile[2] else 'Не указан'} кг\n"
-                f"Рост: {profile[3] if profile[3] else 'Не указан'} см\n"
-                f"Пол: {profile[4] if profile[4] else 'Не указан'}\n"
-            )
+
         greeting += f"{WELCOME_MESSAGE}"
 
-        # Отправка приветственного сообщения с главным меню
-        await update.message.reply_text(
-            greeting,
-            parse_mode="HTML",
-            reply_markup=get_main_menu()
-        )
+        if mode == "api":
+            token = await get_valid_access_token(user_id)
+            if token:
+                greeting += "\n🌐 Активен режим Gym-Stat. Авторизация сохранена."
+                await update.message.reply_text(
+                    greeting,
+                    parse_mode="HTML",
+                    reply_markup=get_main_menu(),
+                )
+            else:
+                await update.message.reply_text(
+                    "🌐 Режим Gym-Stat активен. Для продолжения требуется авторизация.",
+                    reply_markup=get_api_auth_keyboard(),
+                )
+        else:
+            await update.message.reply_text(
+                greeting,
+                parse_mode="HTML",
+                reply_markup=get_main_menu(),
+            )
 
         # Планируем удаление только сообщения с командой /start
         await schedule_message_deletion(
