@@ -16,25 +16,19 @@ import httpx
 from bot.config.settings import GYMSTAT_API_URL
 from bot.utils.logger import setup_logging
 
+
 logger = setup_logging()
 
 
-async def _request(method: str, endpoint: str, token: Optional[str] = None,
-                   json: Optional[Dict[str, Any]] = None,
-                   params: Optional[Dict[str, Any]] = None) -> httpx.Response:
-    """Внутренняя функция для выполнения HTTP-запроса."""
+async def _request(method: str, endpoint: str, token: str | None = None,
+                   json: dict | None = None, params: dict | None = None) -> httpx.Response:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    base_url = GYMSTAT_API_URL.rstrip("/")
-    endpoint = endpoint.lstrip("/")
-    url = f"{base_url}/{endpoint}"
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.request(method, url, headers=headers, json=json, params=params)
+    url = f"{GYMSTAT_API_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    resp = await _client.request(method, url, headers=headers, json=json, params=params)
     if resp.status_code >= 400:
-        logger.warning(f"%s %s -> %s: %s", method, url, resp.status_code, resp.text)
-    else:
-        logger.debug(f"{method} {url} -> {resp.status_code}")
+        logger.warning("%s %s -> %s: %s", method, url, resp.status_code, resp.text)
     return resp
 
 

@@ -64,7 +64,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "⚠️ Имя не может быть пустым или длиннее 50 символов. Пожалуйста, введите корректное имя:",
             reply_markup=None
         )
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [user_message_id, error_message.message_id],
             chat_id,
@@ -80,7 +80,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "🔐 Требуется вход. Используйте /login.",
                 reply_markup=get_personal_data_menu(),
             )
-            await schedule_message_deletion(
+            schedule_message_deletion(
                 context,
                 [user_message_id, error_message.message_id],
                 chat_id,
@@ -98,7 +98,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "⚠️ Не удалось сохранить имя. Попробуйте позже.",
                 reply_markup=get_personal_data_menu(),
             )
-            await schedule_message_deletion(
+            schedule_message_deletion(
                 context,
                 [user_message_id, error_message.message_id],
                 chat_id,
@@ -117,7 +117,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "⚠️ Не удалось сохранить имя. Попробуйте снова.",
                 reply_markup=get_personal_data_menu(),
             )
-            await schedule_message_deletion(
+            schedule_message_deletion(
                 context,
                 [user_message_id, error_message.message_id],
                 chat_id,
@@ -154,7 +154,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "⚠️ Произошла ошибка при сохранении имени. Попробуйте снова.",
                 reply_markup=get_personal_data_menu(),
             )
-            await schedule_message_deletion(
+            schedule_message_deletion(
                 context,
                 [user_message_id, error_message.message_id],
                 chat_id,
@@ -177,7 +177,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         logger.info(
             f"Сообщение об успешном обновлении имени отправлено пользователю {user_id}"
         )
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [user_message_id],
             chat_id,

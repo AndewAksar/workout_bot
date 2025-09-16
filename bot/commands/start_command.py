@@ -87,7 +87,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "💪 Добро пожаловать в бот для тренировок!\nВыберите режим работы:",
                 reply_markup=get_mode_selection_keyboard()
             )
-            await schedule_message_deletion(
+            schedule_message_deletion(
                 context,
                 [update.message.message_id],
                 chat_id=update.message.chat_id,
@@ -126,7 +126,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
 
         # Планируем удаление только сообщения с командой /start
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
@@ -141,7 +141,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
         # Планируем удаление только сообщения с командой /start даже при ошибке
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
@@ -155,7 +155,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             reply_markup=get_main_menu()
         )
         # Планируем удаление только сообщения с командой /start даже при ошибке
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,

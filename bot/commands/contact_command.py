@@ -36,7 +36,7 @@ async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info(f"Отправлен ответ на команду /contacts в чате {chat_id}")
 
         # Планируем удаление только сообщения с командой /сontacts
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,

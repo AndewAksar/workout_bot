@@ -93,7 +93,7 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     reply_markup=get_personal_data_menu()
                 )
                 logger.info(f"Сообщение об успешном обновлении пола отправлено пользователю {user_id}")
-                await schedule_message_deletion(
+                schedule_message_deletion(
                     context,
                     [user_message_id],
                     chat_id,

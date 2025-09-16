@@ -78,7 +78,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         # Планируем удаление сообщений
         logger.info(f"Планируется удаление сообщений {message_ids} в чате {chat_id}")
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             message_ids,
             chat_id=chat_id,
@@ -94,7 +94,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 parse_mode="HTML"
             )
             # Планируем удаление команды /cancel даже при ошибке
-            await schedule_message_deletion(
+            schedule_message_deletion(
                 context,
                 [message_id],
                 chat_id=chat_id,

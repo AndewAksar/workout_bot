@@ -44,11 +44,14 @@ from bot.config.settings import AI_CONSULTATION
 
 logger = setup_logging()
 
+
 # Глобальная переменная для хранения токена
 GIGACHAT_AUTH_TOKEN = None
 
+
 # Ограничение на длину сообщения
 MAX_MESSAGE_LENGTH = 4096
+
 
 # Меню выбора модели
 async def choose_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -61,15 +64,18 @@ async def choose_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     return ConversationHandler.END
 
+
 async def start_gigachat_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запуск консультации с моделью GigaChat."""
     context.user_data['ai_model'] = 'gigachat'
     return await start_ai_assistant(update, context)
 
+
 async def start_chatgpt_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Запуск консультации с моделью ChatGPT."""
     context.user_data['ai_model'] = 'chatgpt'
     return await start_ai_assistant(update, context)
+
 
 # Обработчик запуска консультации с AI после выбора модели
 async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -105,6 +111,7 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
     logger.debug(f"Сохранён message_id начального сообщения: {message.message_id}")
 
     return AI_CONSULTATION
+
 
 # Обработчик сообщений во время консультации
 async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -255,6 +262,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data['conversation_active'] = False
         return ConversationHandler.END
 
+
 # Обработчик завершения консультации (по callback_data='end_ai_consultation')
 async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
@@ -298,6 +306,7 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
         del context.user_data['ai_model']
 
     return ConversationHandler.END
+
 
 # Обработчик ошибок для AI
 async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -352,7 +361,7 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             reply_markup=get_main_menu(),
             parse_mode=ParseMode.HTML,
         )
-        await schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+        schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
 
     except TelegramError as send_error:
         if "Bad Gateway" in str(send_error):
@@ -369,7 +378,7 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         reply_markup=get_main_menu(),
                         parse_mode=ParseMode.HTML,
                     )
-                    await schedule_message_deletion(
+                    schedule_message_deletion(
                         context, [message.message_id], chat_id, delay=5
                     )
                     break

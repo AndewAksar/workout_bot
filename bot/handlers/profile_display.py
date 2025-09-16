@@ -186,7 +186,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             parse_mode="HTML",
             reply_markup=get_settings_menu(),
         )
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context, [sent_message.message_id], chat_id, delay=5
         )
     except TelegramError as e:
@@ -197,6 +197,6 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "⚠️ Произошла ошибка. Попробуйте снова.",
             reply_markup=get_settings_menu(),
         )
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context, [sent_message.message_id], chat_id, delay=5
         )

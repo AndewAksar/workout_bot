@@ -43,7 +43,7 @@ async def set_name_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
-    await schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
     return SET_NAME
 
 async def set_age_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -62,7 +62,7 @@ async def set_age_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data['conversation_active'] = True
     context.user_data['current_state'] = 'SET_AGE'
 
-    await schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
     return SET_AGE
 
 async def set_weight_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -78,7 +78,7 @@ async def set_weight_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
-    await schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
     return SET_WEIGHT
 
 async def set_height_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -94,7 +94,7 @@ async def set_height_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
-    await schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
     return SET_HEIGHT
 
 async def set_gender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -110,5 +110,5 @@ async def set_gender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
-    await schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=15)
     return SET_GENDER

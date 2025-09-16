@@ -46,7 +46,6 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         - ValueError: Если введено некорректное значение веса.
         - aiosqlite.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
     Пример использования:
         Пользователь вводит вес, бот сохраняет его или запрашивает корректный ввод.
     """
@@ -94,7 +93,7 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             reply_markup=get_personal_data_menu()
         )
         logger.info(f"Сообщение об успешном обновлении веса отправлено пользователю {user_id}")
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [user_message_id],
             chat_id,

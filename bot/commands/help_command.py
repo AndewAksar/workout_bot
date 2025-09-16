@@ -47,7 +47,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         # Планируем удаление сообщения с командой /help
         logger.info(f"Планируется удаление сообщения {message_id} в чате {chat_id}")
-        await schedule_message_deletion(
+        schedule_message_deletion(
             context,
             [message_id],
             chat_id=chat_id,
