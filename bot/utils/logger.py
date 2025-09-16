@@ -10,8 +10,6 @@
 - logging: для работы с логгированием.
 - logging.handlers: для поддержки ротации файлов.
 
-Автор: Aksarin A.
-Дата создания: 21/08/2025
 """
 
 import logging
@@ -32,11 +30,14 @@ DEFAULT_LOG_LEVEL = logging.INFO
 FILE_LOG_LEVEL = logging.DEBUG
 """Уровень логирования для файла."""
 
-CONSOLE_LOG_LEVEL = logging.DEBUG
+CONSOLE_LOG_LEVEL = logging.INFO
 """Уровень логирования для консоли."""
 
 DEFAULT_LOG_FILE = os.path.join("logs", "test_bot.log")
 """Путь к файлу логов по умолчанию."""
+
+PRODUCTION_ENV_NAMES = {"production", "prod"}
+"""Множество значений переменной окружения ENVIRONMENT для production-режима."""
 
 def setup_logging(
         log_file: str = DEFAULT_LOG_FILE,
@@ -47,24 +48,23 @@ def setup_logging(
 ) -> logging.Logger:
     """
     Инициализирует и настраивает логгер с поддержкой файла и консоли.
-
     Создаёт экземпляр логгера, который может писать сообщения как в файл,
     так и в консоль. Если файл логов недоступен (например, из-за прав),
     то логирование будет происходить только в консоль.
-
     Аргументы:
-        log_file (str): Путь к файлу логов. По умолчанию - ``logs/test_bot.log``.
-        logger_name (str): Имя логгера. По умолчанию - имя текущего модуля.
-        max_bytes (int): Максимальный размер файла логов перед ротацией (в байтах).
-                         По умолчанию — 10 МБ.
-        backup_count (int): Количество резервных файлов логов при ротации.
-                            По умолчанию — 5.
-        log_level (str): Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-                         Может быть переопределён через переменную окружения LOG_LEVEL.
-                         По умолчанию — INFO.
+    log_file (str):
+        Путь к файлу логов. По умолчанию - ``logs/test_bot.log``.
+    logger_name (str):
+        Имя логгера. По умолчанию - имя текущего модуля.
+    max_bytes (int):
+        Максимальный размер файла логов перед ротацией (в байтах). По умолчанию — 10 МБ.
+    backup_count (int):
+        Количество резервных файлов логов при ротации. По умолчанию — 5.
+    log_level (str):
+        Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        Может быть переопределён через переменную окружения LOG_LEVEL. По умолчанию — INFO.
     Возвращаемое значение:
         logging.Logger: Настроенный экземпляр логгера.
-
     Пример использования:
         >>> logger = setup_logging()
         >>> logger.info("Привет, мир!")
@@ -79,6 +79,10 @@ def setup_logging(
 
     # Устанавливаем уровень логирования
     level = getattr(logging, log_level.upper(), DEFAULT_LOG_LEVEL)
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+    is_production = environment in PRODUCTION_ENV_NAMES
+    if is_production and level < logging.INFO:
+        level = logging.INFO
     logger.setLevel(level)
 
     # Создаём директорию для логов, если её нет
@@ -105,13 +109,19 @@ def setup_logging(
 
     # Добавляем файловый обработчик, если он создан успешно
     if file_handler:
-        file_handler.setLevel(FILE_LOG_LEVEL)
+        file_level = FILE_LOG_LEVEL
+        if is_production and file_level < logging.INFO:
+            file_level = logging.INFO
+        file_handler.setLevel(file_level)
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
 
     # Настраиваем обработчик для вывода в консоль
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(CONSOLE_LOG_LEVEL)
+    console_level = CONSOLE_LOG_LEVEL
+    if is_production and console_level < logging.INFO:
+        console_level = logging.INFO
+    console_handler.setLevel(console_level)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 

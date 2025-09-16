@@ -65,8 +65,11 @@ async def generate_chatgpt_response(
                     headers=headers,
                     json=payload,
                 )
+                response_length = len(response.text or "")
                 logger.debug(
-                    "Ответ OpenAI: %s - %s", response.status_code, response.text
+                    "Ответ OpenAI: status=%s len=%s",
+                    response.status_code,
+                    response_length,
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -80,10 +83,9 @@ async def generate_chatgpt_response(
                     await asyncio.sleep(delay)
                     continue
                 logger.error(
-                    "Ошибка API OpenAI: %s - %s",
+                    "Ошибка API OpenAI: status=%s len=%s",
                     response.status_code,
-                    delay,
-                    response.text,
+                    response_length,
                 )
 
                 return f"Ошибка: {response.status_code} - {response.text}"

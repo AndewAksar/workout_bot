@@ -68,7 +68,11 @@ def get_gigachat_token() -> str:
             logger.info(f"Токен получен: {GIGACHAT_AUTH_TOKEN[:10]}...")
             return GIGACHAT_AUTH_TOKEN
         else:
-            logger.error(f"Ошибка OAuth: {response.status_code} - {response.text}")
+            logger.error(
+                "Ошибка OAuth: status=%s len=%s",
+                response.status_code,
+                len(response.text or ""),
+            )
             raise Exception(f"Ошибка OAuth: {response.status_code} - {response.text}")
     except Exception as e:
         logger.error(f"Ошибка при получении токена: {e}")
@@ -165,10 +169,11 @@ async def generate_gigachat_response(
                     json=data,
                     headers=headers,
                 )
+                response_length = len(response.text or "")
                 logger.info(
-                    "Получен ответ: %s - %s",
+                    "Получен ответ: status=%s len=%s",
                     response.status_code,
-                    response.text,
+                    response_length,
                 )
                 if response.status_code == 200:
                     return response.json()['choices'][0]['message']['content']
@@ -186,17 +191,17 @@ async def generate_gigachat_response(
                     )
                     if attempt == retries - 1:
                         logger.error(
-                            "Ошибка API GigaChat: %s - %s",
+                            "Ошибка API GigaChat: status=%s len=%s",
                             response.status_code,
-                            response.text,
+                            response_length,
                         )
                         return "Ошибка: Внутренняя ошибка сервера. Попробуйте позже."
                     await asyncio.sleep(delay)
                     continue
                 logger.error(
-                    "Ошибка API GigaChat: %s - %s",
+                    "Ошибка API GigaChat: status=%s len=%s",
                     response.status_code,
-                    response.text,
+                    response_length,
                 )
                 return f"Ошибка: {response.status_code} - {response.text}"
             except Exception as e:  # noqa: BLE001
