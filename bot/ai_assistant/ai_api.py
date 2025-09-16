@@ -145,18 +145,6 @@ async def generate_gigachat_response(
         "temperature": 0.7
     }
 
-    headers = {
-        'Authorization': f'Bearer {GIGACHAT_AUTH_TOKEN}',
-        'Content-Type': 'application/json',
-        'RqUID': str(uuid.uuid4())
-    }
-    data = {
-        "model": "GigaChat",
-        "messages": messages,
-        "max_tokens": 2500,
-        "temperature": 0.7
-    }
-
 
     async with httpx.AsyncClient(verify=False, timeout=60) as client:
         for attempt in range(retries):

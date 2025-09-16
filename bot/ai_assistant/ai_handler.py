@@ -15,6 +15,7 @@
 
 import logging
 import asyncio
+from collections import deque
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -80,6 +81,7 @@ async def start_ai_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['conversation_active'] = True
     context.user_data['current_state'] = 'AI_CONSULTATION'
     context.user_data['ai_history'] = []
+    context.user_data['ai_history'] = deque(maxlen=10)
 
     model = context.user_data.get('ai_model', 'gigachat')
     model_name = 'ChatGPT' if model == 'chatgpt' else 'GigaChat'
@@ -151,7 +153,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data['ai_history'].append({"role": "user", "content": user_message})
 
         # Формируем полный список сообщений для API
-        messages = [{"role": "system", "content": system_prompt}] + context.user_data['ai_history']
+        messages = [{"role": "system", "content": system_prompt}] + list(context.user_data['ai_history'])
 
         # Получаем ответ от выбранной модели
         model = context.user_data.get('ai_model', 'gigachat')
