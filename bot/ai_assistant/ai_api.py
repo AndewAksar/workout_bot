@@ -8,16 +8,19 @@
 - requests: Для отправки HTTP-запросов к API GigaChat.
 - uuid: Для генерации уникальных идентификаторов запросов.
 - json: Для сериализации данных запроса в логи.
-- time: Для реализации задержек при повторных попытках.
+- asyncio: Для неблокирующих задержек при повторных попытках.
+- httpx: Для асинхронной отправки HTTP-запросов к API GigaChat.
 - bot.utils.logger: Для настройки логирования.
 - bot.config.settings: Для получения конфигурационных переменных.
 - bot.config.ai_prompt: Для получения системного предпромта.
 """
 
-import requests
-import uuid
+import asyncio
 import json
-import time
+import uuid
+
+import httpx
+import requests
 import sqlite3
 
 from bot.utils.logger import setup_logging
@@ -32,8 +35,10 @@ from bot.ai_assistant.ai_prompt import get_system_prompt
 
 logger = setup_logging()
 
+
 # Глобальная переменная для хранения токена
 GIGACHAT_AUTH_TOKEN = None
+
 
 # Глобальная переменная для хранения ID запроса
 def get_gigachat_token() -> str:
@@ -67,6 +72,7 @@ def get_gigachat_token() -> str:
     except Exception as e:
         logger.error(f"Ошибка при получении токена: {e}")
         raise
+
 
 def get_user_settings(user_id: int) -> dict:
     """
@@ -108,7 +114,8 @@ def get_user_settings(user_id: int) -> dict:
         if conn:
             conn.close()
 
-def generate_gigachat_response(
+
+async def generate_gigachat_response(
         messages: list,
         retries: int = 3,
         delay: float = 2.0
@@ -139,6 +146,7 @@ def generate_gigachat_response(
         "max_tokens": 2500,
         "temperature": 0.7
     }
+
     headers = {
         'Authorization': f'Bearer {GIGACHAT_AUTH_TOKEN}',
         'Content-Type': 'application/json',
@@ -150,30 +158,64 @@ def generate_gigachat_response(
         "max_tokens": 2500,
         "temperature": 0.7
     }
-    for attempt in range(retries):
-        try:
-            logger.info(f"Отправка запроса (попытка {attempt + 1}/{retries}) с заголовком Authorization: Bearer {GIGACHAT_AUTH_TOKEN[:10]}...")
-            logger.info(f"Отправляемый запрос: {json.dumps(data, ensure_ascii=False)}")
-            response = requests.post(GIGACHAT_API_URL, json=data, headers=headers, verify=False)
-            logger.info(f"Получен ответ: {response.status_code} - {response.text}")
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
-            elif response.status_code == 401:
-                logger.info("Токен недействителен, пытаемся получить новый...")
-                get_gigachat_token()
-                headers['Authorization'] = f'Bearer {GIGACHAT_AUTH_TOKEN}'
-            elif response.status_code == 500:
-                logger.warning(f"Внутренняя ошибка сервера (попытка {attempt + 1}/{retries}). Повтор через {delay} сек...")
-                if attempt == retries - 1:
-                    logger.error(f"Ошибка API GigaChat: {response.status_code} - {response.text}")
-                    return "Ошибка: Внутренняя ошибка сервера. Попробуйте позже."
-                time.sleep(delay)
-            else:
-                logger.error(f"Ошибка API GigaChat: {response.status_code} - {response.text}")
+
+
+    async with httpx.AsyncClient(verify=False, timeout=60) as client:
+        for attempt in range(retries):
+            try:
+                token_preview = (GIGACHAT_AUTH_TOKEN or "")[:10]
+                logger.info(
+                    "Отправка запроса (попытка %s/%s) с заголовком Authorization: Bearer %s...",
+                    attempt + 1,
+                    retries,
+                    token_preview,
+                )
+                logger.info(
+                    "Отправляемый запрос: %s",
+                    json.dumps(data, ensure_ascii=False),
+                )
+                response = await client.post(
+                    GIGACHAT_API_URL,
+                    json=data,
+                    headers=headers,
+                )
+                logger.info(
+                    "Получен ответ: %s - %s",
+                    response.status_code,
+                    response.text,
+                )
+                if response.status_code == 200:
+                    return response.json()['choices'][0]['message']['content']
+                if response.status_code == 401:
+                    logger.info("Токен недействителен, пытаемся получить новый...")
+                    get_gigachat_token()
+                    headers['Authorization'] = f'Bearer {GIGACHAT_AUTH_TOKEN}'
+                    continue
+                if response.status_code == 500:
+                    logger.warning(
+                        "Внутренняя ошибка сервера (попытка %s/%s). Повтор через %.1f сек...",
+                        attempt + 1,
+                        retries,
+                        delay,
+                    )
+                    if attempt == retries - 1:
+                        logger.error(
+                            "Ошибка API GigaChat: %s - %s",
+                            response.status_code,
+                            response.text,
+                        )
+                        return "Ошибка: Внутренняя ошибка сервера. Попробуйте позже."
+                    await asyncio.sleep(delay)
+                    continue
+                logger.error(
+                    "Ошибка API GigaChat: %s - %s",
+                    response.status_code,
+                    response.text,
+                )
                 return f"Ошибка: {response.status_code} - {response.text}"
-        except Exception as e:
-            logger.error(f"Ошибка API GigaChat: {e}")
-            if attempt == retries - 1:
-                return f"Ошибка: {str(e)}"
-            time.sleep(delay)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Ошибка API GigaChat: {e}")
+                if attempt == retries - 1:
+                    return f"Ошибка: {str(e)}"
+                await asyncio.sleep(delay)
     return "Ошибка: Не удалось получить ответ от сервера после нескольких попыток."

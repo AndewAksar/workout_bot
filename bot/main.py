@@ -118,7 +118,7 @@ def main() -> None:
     init_db()
 
     # Создание объекта приложения Telegram-бота
-    application = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(False).build()
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Настройка ConversationHandler для интерактивного редактирования профиля и вызова AI-консультанта
     conv_handler = ConversationHandler(

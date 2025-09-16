@@ -5,15 +5,16 @@
 Он используется Telegram-ботом для получения ответов на пользовательские
 запросы.
 Зависимости:
-- httpx: отправка HTTP-запросов к API OpenAI.
-- time: реализация задержек при повторных попытках.
+- asyncio: реализация неблокирующих задержек при повторных попытках.
+- httpx: асинхронная отправка HTTP-запросов к API OpenAI.
 - typing: описание типов данных.
 - bot.utils.logger: настройка и использование логирования.
 - bot.config.settings: получение конфигурационных параметров.
 """
 
-from typing import List, Dict
-import time
+import asyncio
+from typing import Dict, List
+
 import httpx
 
 from bot.utils.logger import setup_logging
@@ -25,7 +26,7 @@ from bot.config.settings import (
 
 logger = setup_logging()
 
-def generate_chatgpt_response(
+async def generate_chatgpt_response(
         messages: List[Dict[str, str]],
         model: str = OPENAI_MODEL,
         retries: int = 3,
@@ -51,43 +52,47 @@ def generate_chatgpt_response(
         "Content-Type": "application/json",
     }
     payload = {"model": model, "messages": messages}
-
-    for attempt in range(retries):
-        try:
-            logger.info(
-                "Отправка запроса к OpenAI (попытка %s/%s)",
-                attempt + 1,
-                retries,
-            )
-            response = httpx.post(
-                OPENAI_API_URL, headers=headers, json=payload, timeout=60
-            )
-            logger.debug(
-                "Ответ OpenAI: %s - %s", response.status_code, response.text
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-            if response.status_code >= 500 and attempt < retries - 1:
-                logger.warning(
-                    "Серверная ошибка OpenAI (%s). Повтор через %.1f сек.",
+    async with httpx.AsyncClient(timeout=60) as client:
+        for attempt in range(retries):
+            try:
+                logger.info(
+                    "Отправка запроса к OpenAI (попытка %s/%s)",
+                    attempt + 1,
+                    retries,
+                )
+                response = await client.post(
+                    OPENAI_API_URL,
+                    headers=headers,
+                    json=payload,
+                )
+                logger.debug(
+                    "Ответ OpenAI: %s - %s", response.status_code, response.text
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
+                if response.status_code >= 500 and attempt < retries - 1:
+                    logger.warning(
+                        "Серверная ошибка OpenAI (%s). Повтор через %.1f сек.",
+                        response.status_code,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                logger.error(
+                    "Ошибка API OpenAI: %s - %s",
                     response.status_code,
                     delay,
+                    response.text,
                 )
-                time.sleep(delay)
-                continue
-            logger.error(
-                "Ошибка API OpenAI: %s - %s",
-                response.status_code,
-                response.text,
-            )
-            return f"Ошибка: {response.status_code} - {response.text}"
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Исключение при запросе к OpenAI: %s", exc)
-            if attempt < retries - 1:
-                time.sleep(delay)
-            else:
-                return f"Ошибка: {exc}"
+
+                return f"Ошибка: {response.status_code} - {response.text}"
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Исключение при запросе к OpenAI: %s", exc)
+                if attempt < retries - 1:
+                    await asyncio.sleep(delay)
+                else:
+                    return f"Ошибка: {exc}"
 
     return "Ошибка: Не удалось получить ответ от OpenAI после нескольких попыток."
 
