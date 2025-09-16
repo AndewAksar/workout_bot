@@ -1,4 +1,4 @@
-# message_deletion.py
+# bot/utils/message_deletion.py
 """
 Импортирует функцию schedule_message_deletion, которая планирует удаление сообщений через указанное время.
 """
