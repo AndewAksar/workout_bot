@@ -3,7 +3,7 @@
 Модуль: profile_display.py
 Описание: Отображение профиля пользователя в зависимости от выбранного режима.
 Зависимости:
-- sqlite3: Локальное хранение данных.
+- aiosqlite: Асинхронное локальное хранение данных.
 - telegram, telegram.ext: Работа с Telegram API.
 - bot.api.gym_stat_client: Запросы к Gym-Stat API.
 - bot.utils.api_session: Управление access-токеном.
@@ -11,7 +11,7 @@
 - bot.keyboards.settings_menu: Клавиатура настроек.
 """
 
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes
 import httpx
@@ -46,7 +46,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     logger.info("Пользователь %s запросил профиль", user_id)
 
     try:
-        mode = get_user_mode(user_id)
+        mode = await get_user_mode(user_id)
         if mode == "api":
             token = await get_valid_access_token(user_id)
             if not token:
@@ -148,13 +148,12 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 # f"🎯 Цели: <code>{goals}</code>"
             )
         else:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute(
-                "SELECT name, age, weight, height, gender, username FROM UserSettings WHERE user_id = ?",
-                (user_id,),
-            )
-            profile = c.fetchone()
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute(
+                    "SELECT name, age, weight, height, gender, username FROM UserSettings WHERE user_id = ?",
+                    (user_id,),
+                ) as cursor:
+                    profile = await cursor.fetchone()
             if profile:
                 greeting = (
                     f"<b>Ваш профиль:</b>\n"
@@ -167,15 +166,12 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 )
             else:
                 greeting = "⚠️ Профиль не найден. Пожалуйста, используйте /start для инициализации."
-    except sqlite3.Error as e:
+    except aiosqlite.Error as e:
         logger.error("Ошибка при отображении профиля для пользователя %s: %s", user_id, str(e))
         greeting = "❌ Произошла ошибка при отображении профиля."
     except Exception as e:
         logger.exception("Непредвиденная ошибка при отображении профиля для пользователя %s", user_id)
         greeting = "❌ Не удалось получить профиль. Попробуйте позже."
-    finally:
-        if 'conn' in locals():
-            conn.close()
     try:
         await query.message.edit_text(
             greeting,

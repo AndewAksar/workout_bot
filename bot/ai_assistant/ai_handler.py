@@ -136,7 +136,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     try:
         # Получаем данные пользователя из БД
-        settings = get_user_settings(user_id)
+        settings = await get_user_settings(user_id)
         user_data_str = ""
         if settings:
             user_data_str = "\nДанные пользователя:\n"
@@ -156,10 +156,10 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Получаем ответ от выбранной модели
         model = context.user_data.get('ai_model', 'gigachat')
         if model == 'chatgpt':
-            response = await generate_chatgpt_response(messages)
+            response = await asyncio.to_thread(generate_chatgpt_response, messages)
             logger.debug(f"Длина ответа от ChatGPT: {len(response)} символов")
         else:
-            response = await generate_gigachat_response(messages)
+            response = await asyncio.to_thread(generate_gigachat_response, messages)
             logger.debug(f"Длина ответа от GigaChat: {len(response)} символов")
 
         # Добавляем ответ assistant в историю

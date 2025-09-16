@@ -5,7 +5,7 @@
 и определения состояний для диалогов. Обрабатывает ввод пола пользователя и команду отмены.
 
 Зависимости:
-- sqlite3: Для работы с базой данных SQLite.
+- aiosqlite: Для асинхронной работы с базой данных SQLite.
 - telegram: Для взаимодействия с Telegram API.
 - telegram.ext: Для работы с контекстом, обработчиками и ConversationHandler.
 - bot.keyboards.personal_data_menu: Для получения меню личных данных.
@@ -14,8 +14,9 @@
 - bot.utils.logger: Для настройки логирования.
 """
 
+import asyncio
 import os
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import (
     ContextTypes,
@@ -44,8 +45,7 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         int: ConversationHandler.END, завершающий диалог.
     Исключения:
         - sqlite3.Error: Если возникают ошибки при работе с базой данных.
-        - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
+        - aiosqlite.Error: Если возникают ошибки при работе с базой данных.
     Пример использования:
         Пользователь вводит свой пол, бот сохраняет его и возвращает меню настроек тренировок.
     """
@@ -60,48 +60,54 @@ async def set_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     try:
         logger.info(f"Подключение к базе данных: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'",
+            ) as cursor:
+                if not await cursor.fetchone():
+                    logger.error("Таблица UserSettings не существует, вызываем init_db")
+                    from bot.database.db_init import init_db
+                    await asyncio.to_thread(init_db)
+            async with db.execute(
+                "SELECT user_id FROM UserSettings WHERE user_id = ?",
+                (user_id,),
+            ) as cursor:
+                user_exists = await cursor.fetchone()
+            if not user_exists:
+                await db.execute(
+                    "INSERT INTO UserSettings (user_id) VALUES (?)",
+                    (user_id,),
+                )
+                await db.commit()
 
-        # Проверка существования таблицы
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
-        if not c.fetchone():
-            logger.error("Таблица UserSettings не существует, вызываем init_db")
-            from bot.database.db_init import init_db
-            init_db()
-
-        # Проверка существования пользователя
-        c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
-        if not c.fetchone():
-            c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
-            conn.commit()
-
-        if gender.lower() in ["мужской", "женский"]:
-            c.execute("UPDATE UserSettings SET gender = ? WHERE user_id = ?", (gender.lower(), user_id))
-            conn.commit()
-            logger.info(f"Пол успешно обновлён для пользователя {user_id}: {gender}")
-            await update.message.reply_text(
-                "✅ Пол успешно обновлён!",
-                reply_markup=get_personal_data_menu()
-            )
-            logger.info(f"Сообщение об успешном обновлении пола отправлено пользователю {user_id}")
-            await schedule_message_deletion(
-                context,
-                [user_message_id],
-                chat_id,
-                delay=5
-            )
-            conn.close()
-            return ConversationHandler.END
-        else:
+            normalized_gender = gender.lower()
+            if normalized_gender in ["мужской", "женский"]:
+                await db.execute(
+                    "UPDATE UserSettings SET gender = ? WHERE user_id = ?",
+                    (normalized_gender, user_id),
+                )
+                await db.commit()
+                logger.info(f"Пол успешно обновлён для пользователя {user_id}: {gender}")
+                await update.message.reply_text(
+                    "✅ Пол успешно обновлён!",
+                    reply_markup=get_personal_data_menu()
+                )
+                logger.info(f"Сообщение об успешном обновлении пола отправлено пользователю {user_id}")
+                await schedule_message_deletion(
+                    context,
+                    [user_message_id],
+                    chat_id,
+                    delay=5
+                )
+                return ConversationHandler.END
             logger.warning(f"Пользователь {user_id} отправил некорректные данные: {gender}")
             await update.message.reply_text(
                 "⚠️ Пожалуйста, введите корректные данные (мужской/женский):",
                 reply_markup=None
             )
-            conn.close()
+
             return SET_GENDER
-    except sqlite3.Error as e:
+    except aiosqlite.Error as e:
         logger.error(f"Ошибка базы данных для пользователя {user_id}: {e}")
         await update.message.reply_text(
             "❌ Произошла ошибка при сохранении данных. Попробуйте снова.",

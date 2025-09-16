@@ -5,19 +5,16 @@
 и определения состояний для диалогов. Обрабатывает ввод роста и команду отмены.
 
 Зависимости:
-- sqlite3: Для работы с базой данных SQLite.
+- aiosqlite: Для асинхронной работы с базой данных SQLite.
 - telegram: Для взаимодействия с Telegram API.
 - telegram.ext: Для работы с контекстом, обработчиками и ConversationHandler.
 - bot.keyboards.personal_data_menu: Для получения меню личных данных.
 - bot.keyboards.training_settings_menu: Для получения меню настроек тренировок.
 - bot.keyboards.settings_menu: Для получения меню настроек.
 - bot.utils.logger: Для настройки логирования.
-
-Автор: Aksarin A.
-Дата создания: 21/08/2025
 """
 
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import (
     ContextTypes,
@@ -34,24 +31,19 @@ logger = setup_logging()
 async def set_height(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Обработчик ввода роста пользователя.
-
     Описание:
         Проверяет корректность введенного роста (число с плавающей точкой от 0 до 300),
         сохраняет его в базе данных и возвращает меню личных данных.
         При некорректном вводе отправляет сообщение об ошибке.
-
     Аргументы:
         update (telegram.Update): Объект обновления, содержащий введенное сообщение.
         context (telegram.ext.ContextTypes.DEFAULT_TYPE): Контекст выполнения команды.
-
     Возвращаемое значение:
         int: ConversationHandler.END, завершающий диалог.
-
     Исключения:
         - ValueError: Если введено некорректное значение роста.
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
+        - aiosqlite.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
-
     Пример использования:
         Пользователь вводит рост, бот сохраняет его или запрашивает корректный ввод.
     """
@@ -63,11 +55,12 @@ async def set_height(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         height = float(update.message.text.strip())
         if height < 0 or height > 300:
             raise ValueError("Некорректный рост")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET height = ? WHERE user_id = ?", (height, user_id))
-        conn.commit()
-        conn.close()
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE UserSettings SET height = ? WHERE user_id = ?",
+                (height, user_id),
+            )
+            await db.commit()
         await update.message.reply_text(
             f"✅ Рост обновлен: {height} см",
             reply_markup=get_personal_data_menu()

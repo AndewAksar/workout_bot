@@ -3,7 +3,7 @@
 Модуль: mode_handlers.py
 Описание: Обработчики выбора и переключения режима работы бота.
 Зависимости:
-- sqlite3 - для работы с базой данных.
+- aiosqlite - для асинхронной работы с базой данных.
 - httpx - для работы с HTTP-запросами.
 - typing - для определения типов переменных.
 - telegram - для работы с Telegram API.
@@ -15,9 +15,8 @@
 - bot.utils.logger - для логирования событий.
 """
 
-import sqlite3
+import aiosqlite
 from typing import Optional
-
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -37,27 +36,25 @@ from bot.utils.logger import setup_logging
 
 logger = setup_logging()
 
-def _get_user_mode(user_id: int) -> Optional[str]:
+async def _get_user_mode(user_id: int) -> Optional[str]:
     """Возвращает текущий режим пользователя."""
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        c = conn.cursor()
-        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
-        return row[0] if row else None
-    finally:
-        conn.close()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT mode FROM users WHERE user_id = ?",
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return row[0] if row else None
 
 
-def _update_user_mode(user_id: int, mode: str) -> None:
+async def _update_user_mode(user_id: int, mode: str) -> None:
     """Обновляет режим пользователя."""
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        c = conn.cursor()
-        c.execute("UPDATE users SET mode = ? WHERE user_id = ?", (mode, user_id))
-        conn.commit()
-    finally:
-        conn.close()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET mode = ? WHERE user_id = ?",
+            (mode, user_id),
+        )
+        await db.commit()
 
 
 async def select_mode_local(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -148,19 +145,19 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.warning(
                 "Пользователь %s: API недоступно, остаёмся в локальном режиме", user_id
             )
-            _update_user_mode(user_id, "local")
+            await _update_user_mode(user_id, "local")
             await query.message.edit_text(
                 "⚠️ Сайт Gym-Stat.ru недоступен. Остаёмся в Telegram-версии.",
                 reply_markup=get_main_menu(),
             )
             return
-        _update_user_mode(user_id, "api")
+        await _update_user_mode(user_id, "api")
         await query.message.edit_text(
             "Режим изменен на интеграцию с Gym-Stat.ru. Выберите действие:",
             reply_markup=get_api_auth_keyboard(),
         )
     else:
-        _update_user_mode(user_id, "local")
+        await _update_user_mode(user_id, "local")
         await query.message.edit_text(
             "Режим изменен на Telegram-версию.", reply_markup=get_main_menu()
         )

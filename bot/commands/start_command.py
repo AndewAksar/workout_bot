@@ -4,7 +4,7 @@
 Описание: Модуль содержит обработчик команды /start.
 
 Зависимости:
-- sqlite3: Для работы с базой данных SQLite.
+- aiosqlite: Для асинхронной работы с базой данных SQLite.
 - telegram: Для взаимодействия с Telegram API.
 - telegram.ext: Для работы с контекстом и обновлениями Telegram.
 - bot.config.settings: Для получения конфигурационных данных (WELCOME_MESSAGE).
@@ -12,9 +12,9 @@
 - bot.utils.message_deletion: Для планирования удаления сообщений.
 """
 
-import sqlite3
+import asyncio
 import os
-
+import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -42,49 +42,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         logger.info(f"Подключение к базе данных: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        from bot.database.db_init import init_db
+        await asyncio.to_thread(init_db)
+        profile = None
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT mode FROM users WHERE user_id = ?",
+                (user_id,),
+            ) as cursor:
+                user_record = await cursor.fetchone()
 
-        # Проверяем наличие таблиц
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if not c.fetchone():
-            from bot.database.db_init import init_db
-            init_db()
+            if not user_record:
+                await db.execute(
+                    "INSERT INTO users (user_id, telegram_username, mode) VALUES (?, ?, 'local')",
+                    (user_id, username),
+                )
+                mode = "local"
+            else:
+                mode = user_record[0]
+                await db.execute(
+                    "INSERT OR IGNORE INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
+                    (user_id, username, first_name),
+                )
 
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='UserSettings'")
-
-        if not c.fetchone():
-            from bot.database.db_init import init_db
-            init_db()
-
-        # Проверяем, есть ли пользователь
-        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
-        user_record = c.fetchone()
-
-        if not user_record:
-            c.execute(
-                "INSERT INTO users (user_id, telegram_username, mode) VALUES (?, ?, 'local')",
-                (user_id, username),
+            await db.execute(
+                "UPDATE UserSettings SET username = ?, name = COALESCE(name, ?) WHERE user_id = ?",
+                (username, first_name, user_id),
             )
-            mode = "local"
-        else:
-            mode = user_record[0]
 
-        c.execute(
-            "INSERT OR IGNORE INTO UserSettings (user_id, username, name) VALUES (?, ?, ?)",
-            (user_id, username, first_name),
-        )
+            await db.execute(
+                "UPDATE users SET telegram_username = ? WHERE user_id = ?",
+                (username, user_id),
+            )
+            await db.commit()
 
-        c.execute(
-            "UPDATE UserSettings SET username = ?, name = COALESCE(name, ?) WHERE user_id = ?",
-            (username, first_name, user_id),
-        )
-
-        c.execute(
-            "UPDATE users SET telegram_username = ? WHERE user_id = ?",
-            (username, user_id),
-        )
-        conn.commit()
+            async with db.execute(
+                    "SELECT name, age, weight, height, gender FROM UserSettings WHERE user_id = ?",
+                    (user_id,),
+            ) as cursor:
+                profile = await cursor.fetchone()
 
         if not user_record:
             await update.message.reply_text(
@@ -98,12 +94,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 delay=5)
             return
 
-        c.execute("SELECT name, age, weight, height, gender FROM UserSettings WHERE user_id = ?", (user_id,))
-        profile = c.fetchone()
-
         # Формирование приветственного сообщения
+        name = profile[0] if profile and profile[0] else username
+
         greeting = (
-            f"<b>Привет, {profile[0] or username}! 👋</b>\n"
+            f"<b>Привет, {name}! 👋</b>\n"
             f"Твой ID: <code>{user_id}</code>\n"
         )
 
@@ -138,7 +133,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             delay=5
         )
 
-    except sqlite3.Error as e:
+    except aiosqlite.Error as e:
         logger.error(f"Ошибка базы данных для пользователя {user_id}: {e}")
         sent_message = await update.message.reply_text(
             "❌ Произошла ошибка при создании профиля. Попробуйте снова.",
@@ -168,7 +163,5 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     finally:
-        if 'conn' in locals():
-            conn.close()
-            logger.info(f"Соединение с базой данных закрыто для пользователя {user_id}")
+        logger.info(f"Соединение с базой данных закрыто для пользователя {user_id}")
 

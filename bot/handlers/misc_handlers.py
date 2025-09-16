@@ -13,7 +13,7 @@
 - bot.utils.logger: Для настройки логирования.
 """
 
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -51,7 +51,7 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} запросил список тренировок")
 
-    mode = get_user_mode(user_id)
+    mode = await get_user_mode(user_id)
 
     if mode == 'api':
         token = await get_valid_access_token(user_id)
@@ -96,10 +96,12 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     logger.info(f"Пользователь {user_id} открыл настройки")
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT mode FROM users WHERE user_id = ?",
+                (user_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
         mode = row[0] if row else 'local'
         mode_text = 'Интеграция с Gym-Stat.ru' if mode == 'api' else 'Telegram-версия'
 
@@ -117,9 +119,6 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         except Exception as reply_error:
             logger.error(f"Ошибка при отправке сообщения об ошибке для пользователя {user_id}: {reply_error}")
         return ConversationHandler.END
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
     context.user_data['conversation_active'] = False
     return ConversationHandler.END

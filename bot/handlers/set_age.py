@@ -5,7 +5,7 @@
 и определения состояний для диалогов. Обрабатывает ввод возраста и команду отмены.
 
 Зависимости:
-- sqlite3: Для работы с базой данных SQLite.
+- aiosqlite: Для асинхронной работы с базой данных SQLite.
 - telegram: Для взаимодействия с Telegram API.
 - telegram.ext: Для работы с контекстом, обработчиками и ConversationHandler.
 - bot.keyboards.personal_data_menu: Для получения меню личных данных.
@@ -15,7 +15,7 @@
 - bot.utils.logger: Для настройки логирования.
 """
 
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import (
     ContextTypes,
@@ -44,7 +44,7 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         int: ConversationHandler.END, завершающий диалог.
     Исключения:
         - ValueError: Если введено некорректное значение возраста.
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
+        - aiosqlite.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
     Пример использования:
         Пользователь вводит возраст, бот сохраняет его или запрашивает корректный ввод,
@@ -69,11 +69,12 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         if age < 0 or age > 150:
             raise ValueError("Некорректный возраст")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("UPDATE UserSettings SET age = ? WHERE user_id = ?", (age, user_id))
-        conn.commit()
-        conn.close()
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE UserSettings SET age = ? WHERE user_id = ?",
+                (age, user_id),
+            )
+            await db.commit()
         await update.message.reply_text(
             f"✅ Возраст обновлен: {age}",
             reply_markup=get_personal_data_menu()

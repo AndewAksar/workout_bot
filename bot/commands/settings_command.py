@@ -1,7 +1,7 @@
 # bot/handlers/settings_command.py
 """Обработчик команды /settings."""
 
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -20,10 +20,12 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_id = update.message.message_id
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT mode FROM users WHERE user_id = ?", (user_id,))
-        row = c.fetchone()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                    "SELECT mode FROM users WHERE user_id = ?",
+                    (user_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
         mode = row[0] if row else 'local'
         mode_text = 'Интеграция с Gym-Stat.ru' if mode == 'api' else 'Telegram-версия'
 
@@ -47,7 +49,3 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "❌ Произошла ошибка. Попробуйте снова позже.",
             parse_mode="HTML"
         )
-
-    finally:
-        if 'conn' in locals():
-            conn.close()

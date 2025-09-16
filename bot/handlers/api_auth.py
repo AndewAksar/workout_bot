@@ -318,7 +318,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return ConversationHandler.END
         if not refresh:
             logger.warning("Сервер не вернул refresh_token: %s", data)
-        save_api_tokens(
+        await save_api_tokens(
             update.message.from_user.id,
             encrypt_token(access),
             encrypt_token(refresh) if refresh else None,

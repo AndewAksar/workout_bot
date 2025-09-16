@@ -21,7 +21,8 @@ import uuid
 
 import httpx
 import requests
-import sqlite3
+import aiosqlite
+
 
 from bot.utils.logger import setup_logging
 from bot.config.settings import (
@@ -74,7 +75,7 @@ def get_gigachat_token() -> str:
         raise
 
 
-def get_user_settings(user_id: int) -> dict:
+async def get_user_settings(user_id: int) -> dict:
     """
     Получает данные пользователя из базы данных по user_id.
     Аргументы:
@@ -82,19 +83,19 @@ def get_user_settings(user_id: int) -> dict:
     Возвращаемое значение:
         dict: Словарь с данными пользователя (name, age, weight, height, gender, username) или пустой dict, если данных нет.
     Исключения:
-        sqlite3.Error: Если возникают ошибки при работе с базой данных.
+        aiosqlite.Error: Если возникают ошибки при работе с базой данных.
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            '''
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+            """
                 SELECT name, age, weight, height, gender, username
                 FROM UserSettings
                 WHERE user_id = ?
-            ''', (user_id,)
-        )
-        row = c.fetchone()
+            """,
+                (user_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
         if row:
             return {
                 'name': row[0],
@@ -107,12 +108,9 @@ def get_user_settings(user_id: int) -> dict:
         else:
             logger.info(f"Данные для user_id {user_id} не найдены в БД.")
             return {}
-    except sqlite3.Error as e:
+    except aiosqlite.Error as e:
         logger.error(f"Ошибка при получении данных пользователя из БД: {e}")
         return {}
-    finally:
-        if conn:
-            conn.close()
 
 
 async def generate_gigachat_response(

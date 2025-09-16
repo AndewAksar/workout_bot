@@ -5,7 +5,7 @@
 Сохраняет имя в базе данных и возвращает меню личных данных.
 
 Зависимости:
-- sqlite3: Для работы с базой данных SQLite.
+- aiosqlite: Для асинхронной работы с базой данных SQLite.
 - telegram: Для взаимодействия с Telegram API.
 - telegram.ext: Для работы с контекстом и ConversationHandler.
 - bot.keyboards.personal_data_menu: Для получения меню личных данных.
@@ -14,7 +14,7 @@
 - SET_NAME: Константа для идентификации состояния диалога.
 """
 
-import sqlite3
+import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -44,7 +44,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     Возвращаемое значение:
         int: ConversationHandler.END, завершающий диалог.
     Исключения:
-        - sqlite3.Error: Если возникают ошибки при работе с базой данных.
+        - aiosqlite.Error: Если возникают ошибки при работе с базой данных.
         - telegram.error.TelegramError: Если возникают ошибки при отправке сообщения.
     Пример использования:
         Пользователь вводит имя, бот сохраняет его, отправляет подтверждение и планирует
@@ -60,7 +60,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     if not name or len(name) > 50:  # Пример ограничения длины имени
         logger.warning(f"Пользователь {user_id} отправил некорректное имя: {name}")
-        error_message= await update.message.reply_text(
+        error_message = await update.message.reply_text(
             "⚠️ Имя не может быть пустым или длиннее 50 символов. Пожалуйста, введите корректное имя:",
             reply_markup=None
         )
@@ -72,7 +72,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return SET_NAME
 
-    mode = get_user_mode(user_id)
+    mode = await get_user_mode(user_id)
     if mode == 'api':
         token = await get_valid_access_token(user_id)
         if not token:
@@ -127,17 +127,26 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             return ConversationHandler.END
     else:
         try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("SELECT user_id FROM UserSettings WHERE user_id = ?", (user_id,))
-            if not c.fetchone():
-                c.execute("INSERT INTO UserSettings (user_id) VALUES (?)", (user_id,))
-                conn.commit()
-                logger.info(f"Создана новая запись для пользователя {user_id}")
-            c.execute("UPDATE UserSettings SET name = ? WHERE user_id = ?", (name, user_id))
-            conn.commit()
-            logger.info(f"Имя успешно обновлено для пользователя {user_id}: {name}")
-        except sqlite3.Error as e:
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute(
+                        "SELECT user_id FROM UserSettings WHERE user_id = ?",
+                        (user_id,),
+                ) as cursor:
+                    exists = await cursor.fetchone()
+                if not exists:
+                    await db.execute(
+                        "INSERT INTO UserSettings (user_id) VALUES (?)",
+                        (user_id,),
+                    )
+                    await db.commit()
+                    logger.info(f"Создана новая запись для пользователя {user_id}")
+                await db.execute(
+                    "UPDATE UserSettings SET name = ? WHERE user_id = ?",
+                    (name, user_id),
+                )
+                await db.commit()
+                logger.info(f"Имя успешно обновлено для пользователя {user_id}: {name}")
+        except aiosqlite.Error as e:
             logger.error(
                 f"Ошибка базы данных при обновлении имени для пользователя {user_id}: {str(e)}"
             )
@@ -151,18 +160,14 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 chat_id,
                 delay=5,
             )
-            conn.close()
             context.user_data['conversation_active'] = False
             return ConversationHandler.END
         except Exception as e:
             logger.error(
                 f"Ошибка при обработке ввода имени для пользователя {user_id}: {str(e)}"
             )
-            conn.close()
             context.user_data['conversation_active'] = False
             return ConversationHandler.END
-        finally:
-            conn.close()
 
     try:
         await update.message.reply_text(
