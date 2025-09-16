@@ -20,6 +20,10 @@ from bot.utils.logger import setup_logging
 logger = setup_logging()
 
 
+# Создаём глобальный асинхронный клиент HTTP
+_client = httpx.AsyncClient()
+
+
 async def _request(method: str, endpoint: str, token: str | None = None,
                    json: dict | None = None, params: dict | None = None) -> httpx.Response:
     headers = {"Content-Type": "application/json"}

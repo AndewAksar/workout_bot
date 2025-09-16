@@ -17,7 +17,11 @@ from datetime import (
     datetime
 )
 import html
-from telegram import Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update
+)
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -45,6 +49,11 @@ REG_LOGIN, REG_EMAIL, REG_PASSWORD, REG_CONFIRM = range(4)
 LOGIN_LOGIN, LOGIN_PASSWORD = range(4, 6)
 
 
+LOGIN_BUTTON_MARKUP = InlineKeyboardMarkup([
+    [InlineKeyboardButton("Вход", callback_data="login")]
+])
+
+
 def _valid_email(email: str) -> bool:
     return re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", email) is not None
 
@@ -61,7 +70,7 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
-            delay=5,
+            delay=15,
         )
     # Первым шагом запрашиваем логин, т.к. он обязателен при регистрации на сайте
     sent_message = await message.reply_text("👤 Введите логин:")
@@ -69,7 +78,7 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=30,
+        delay=15,
     )
     return REG_LOGIN
 
@@ -81,7 +90,7 @@ async def reg_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context,
         [update.message.message_id],
         chat_id=update.message.chat_id,
-        delay=5,
+        delay=15,
     )
     if not login:
         sent_message = await update.message.reply_text("⚠️ Логин не может быть пустым. Введите снова:")
@@ -89,7 +98,7 @@ async def reg_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=30,
+            delay=15,
         )
         return REG_LOGIN
     context.user_data["reg_login"] = login  # сохраняем логин
@@ -98,7 +107,7 @@ async def reg_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=5,
+        delay=15,
     )
     return REG_EMAIL
 
@@ -109,7 +118,7 @@ async def reg_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context,
         [update.message.message_id],
         chat_id=update.message.chat_id,
-        delay=5,
+        delay=15,
     )
     if not _valid_email(email):
         sent_message = await update.message.reply_text("⚠️ Неверный формат email. Попробуйте снова:")
@@ -117,7 +126,7 @@ async def reg_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
         return REG_EMAIL
     context.user_data["reg_email"] = email
@@ -126,7 +135,7 @@ async def reg_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=5,
+        delay=15,
     )
     return REG_PASSWORD
 
@@ -137,7 +146,7 @@ async def reg_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context,
         [update.message.message_id],
         chat_id=update.message.chat_id,
-        delay=5,
+        delay=15,
     )
     if len(password) < 8:
         sent_message = await update.message.reply_text("⚠️ Пароль слишком короткий. Введите заново:")
@@ -145,7 +154,7 @@ async def reg_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
         return REG_PASSWORD
     context.user_data["reg_password"] = password
@@ -154,7 +163,7 @@ async def reg_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=5,
+        delay=15,
     )
     return REG_CONFIRM
 
@@ -165,14 +174,14 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
-            delay=5,
+            delay=15,
         )
         sent_message = await update.message.reply_text("⚠️ Пароли не совпадают. Введите пароль снова:")
         schedule_message_deletion(
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=10,
+            delay=15,
         )
         return REG_PASSWORD
     schedule_message_deletion(
@@ -188,20 +197,14 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     }
     resp = await register_user(payload)
     if resp.status_code == 201:
-        sent_message = await update.message.reply_text("✅ Регистрация успешна! Теперь выполните /login")
-        schedule_message_deletion(
-            context,
-            [sent_message.message_id],
-            chat_id=sent_message.chat_id,
-            delay=5,
+        sent_message = await update.message.reply_text(
+            "✅ Регистрация успешна! Выполните вход.",
+            reply_markup=LOGIN_BUTTON_MARKUP,
         )
     elif resp.status_code == 409:
-        sent_message = await update.message.reply_text("⚠️ Email уже зарегистрирован. Используйте /login")
-        schedule_message_deletion(
-            context,
-            [sent_message.message_id],
-            chat_id=sent_message.chat_id,
-            delay=5,
+        sent_message = await update.message.reply_text(
+            "⚠️ Email уже зарегистрирован. Выполните вход.",
+            reply_markup=LOGIN_BUTTON_MARKUP,
         )
     else:
         # Извлекаем текст ошибки из ответа API
@@ -221,7 +224,7 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                     context,
                     [sent_message.message_id],
                     chat_id=sent_message.chat_id,
-                    delay=10,
+                    delay=15,
                 )
                 return REG_PASSWORD
         except ValueError:
@@ -232,7 +235,7 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
     return ConversationHandler.END
 
@@ -249,7 +252,7 @@ async def start_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             context,
             [update.message.message_id],
             chat_id=update.message.chat_id,
-            delay=5,
+            delay=15,
         )
     context.user_data["login_attempts"] = 0
     sent_message = await message.reply_text("👤 Введите логин:")
@@ -257,7 +260,7 @@ async def start_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=10,
+        delay=15,
     )
     return LOGIN_LOGIN
 
@@ -268,7 +271,7 @@ async def login_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         context,
         [update.message.message_id],
         chat_id=update.message.chat_id,
-        delay=5,
+        delay=15,
     )
     if not login:
         sent_message = await update.message.reply_text("⚠️ Логин не может быть пустым. Введите снова:")
@@ -276,7 +279,7 @@ async def login_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
         return LOGIN_LOGIN
     context.user_data["login_login"] = login
@@ -286,7 +289,7 @@ async def login_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=10,
+        delay=15,
     )
     return LOGIN_PASSWORD
 
@@ -299,7 +302,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context,
         [update.message.message_id],
         chat_id=update.message.chat_id,
-        delay=5,
+        delay=15,
     )
     resp = await login_user(login, password)
     if resp.status_code == 200:
@@ -315,7 +318,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 context,
                 [sent_message.message_id],
                 chat_id=sent_message.chat_id,
-                delay=5,
+                delay=15,
             )
             return ConversationHandler.END
         if not refresh:
@@ -445,7 +448,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
         return LOGIN_PASSWORD
     if resp.status_code == 429:
@@ -454,7 +457,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
     else:
         sent_message = await update.message.reply_text("❌ Авторизация не удалась")
@@ -462,7 +465,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             context,
             [sent_message.message_id],
             chat_id=sent_message.chat_id,
-            delay=5,
+            delay=15,
         )
     return ConversationHandler.END
 
@@ -472,13 +475,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context,
         [update.message.message_id],
         chat_id=update.message.chat_id,
-        delay=5,
+        delay=15,
     )
     sent_message = await update.message.reply_text("⚠️ Операция отменена!")
     schedule_message_deletion(
         context,
         [sent_message.message_id],
         chat_id=sent_message.chat_id,
-        delay=5,
+        delay=15,
     )
     return ConversationHandler.END
