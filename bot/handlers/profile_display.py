@@ -137,12 +137,17 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     user_id,
                     str(e),
                 )
+
+            height_value = data.get("heightCm")
+            if height_value is None:
+                height_value = data.get("height")
+
             greeting = (
                 f"<b>Ваш профиль на Gym-Stat:</b>\n"
                 f"👤 Имя: <code>{esc(data.get('name'))}</code>\n"
                 f"Дата рождения: <code>{html.escape(birth_date)}</code>\n"
                 f"{last_weight_line}"
-                f"Рост: <code>{esc(data.get('height'))}</code> см\n"
+                f"Рост: <code>{esc(height_value)}</code> см\n"
                 f"Пол: <code>{format_gender(data.get('gender'))}</code>\n\n"
                 f"📧 Email: <code>{esc(data.get('email'))}</code>\n"
                 # f"🎯 Цели: <code>{goals}</code>"

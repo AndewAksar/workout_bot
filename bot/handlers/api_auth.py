@@ -420,12 +420,16 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             str(e),
                         )
 
+                height_value = prof.get("heightCm")
+                if height_value is None:
+                    height_value = prof.get("height")
+
                 profile_text = (
                     f"<b>Привет, {esc(prof.get('name')) or 'пользователь'}! 👋</b>\n"
                     f"👤 Имя: <code>{esc(prof.get('name'))}</code>\n"
                     f"Дата рождения: <code>{html.escape(birth_fmt)}</code>\n"
                     f"{weight_line}"
-                    f"Рост: <code>{esc(prof.get('height'))}</code> см\n"
+                    f"Рост: <code>{esc(height_value)}</code> см\n"
                     f"Пол: <code>{format_gender(prof.get('gender'))}</code>"
                 )
             except Exception as e:
