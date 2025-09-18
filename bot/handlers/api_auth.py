@@ -442,6 +442,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
         return ConversationHandler.END
+
     if resp.status_code == 401 and context.user_data["login_attempts"] < 3:
         sent_message = await update.message.reply_text("❌ Неверные данные. Попробуйте снова:")
         schedule_message_deletion(
@@ -451,6 +452,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             delay=15,
         )
         return LOGIN_PASSWORD
+
     if resp.status_code == 429:
         sent_message = await update.message.reply_text("⏳ Слишком много попыток. Попробуйте позже")
         schedule_message_deletion(
@@ -471,17 +473,73 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    schedule_message_deletion(
-        context,
-        [update.message.message_id],
-        chat_id=update.message.chat_id,
-        delay=15,
+    """Обработчик команды /cancel для диалогов авторизации и регистрации."""
+    message = update.message
+
+    if not message:
+        logger.warning("Получено обновление без сообщения при вызове /cancel")
+        return ConversationHandler.END
+
+    user = message.from_user
+    user_id = user.id if user else "unknown"
+    chat_id = message.chat_id
+    message_id = message.message_id
+
+    try:
+        is_conversation_active = context.user_data.get("conversation_active", False)
+        message_ids = [message_id]
+
+        context.user_data.clear()
+
+        if is_conversation_active:
+            message_text = "❌ Действие отменено."
+            reply_markup = get_main_menu()
+            logger.info(f"Пользователь {user_id} отменил активный диалог.")
+
+        else:
+            message_text = "ℹ️ Нет активного диалога для отмены."
+            reply_markup = None
+            logger.info(
+                f"Пользователь {user_id} вызвал /cancel без активного диалога."
+            )
+
+        sent_message = await message.reply_text(
+            message_text,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+        )
+
+        if not is_conversation_active:
+            message_ids.append(sent_message.message_id)
+
+        schedule_message_deletion(
+            context,
+            message_ids,
+            chat_id=chat_id,
+            delay=5,
+        )
+
+    except Exception as error:
+        logger.error(f"Ошибка при обработке команды /cancel: {error}")
+        try:
+            await message.reply_text(
+                "❌ Произошла ошибка при отмене. Возвращаемся в главное меню.",
+                reply_markup=get_main_menu(),
+                parse_mode="HTML",
+            )
+            schedule_message_deletion(
+                context,
+                [message_id],
+                chat_id=chat_id,
+                delay=5,
+            )
+        except Exception as error_inner:
+            logger.error(
+                "Ошибка при отправке сообщения об ошибке для %s: %s",
+                user_id,
+                error_inner,
+            )
+
+    logger.debug(
+        f"Состояние после /cancel для пользователя {user_id}: {context.user_data}"
     )
-    sent_message = await update.message.reply_text("⚠️ Операция отменена!")
-    schedule_message_deletion(
-        context,
-        [sent_message.message_id],
-        chat_id=sent_message.chat_id,
-        delay=15,
-    )
-    return ConversationHandler.END

@@ -96,3 +96,9 @@ async def get_weight_data(
     """Получение истории взвешиваний пользователя."""
     # История взвешиваний доступна по адресу ``/api/weight-data``.
     return await _request("GET", "/api/weight-data", token=token, params=params)
+
+
+async def create_weight_data(token: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Создание новой записи о взвешивании пользователя."""
+    # Новое взвешивание создаётся по маршруту ``/api/weight-data``.
+    return await _request("POST", "/api/weight-data", token=token, json=payload)

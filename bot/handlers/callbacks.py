@@ -16,6 +16,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.utils.logger import setup_logging
+from bot.utils.db_utils import get_user_mode
 from bot.config.settings import (
      SET_NAME,
      SET_AGE,
@@ -73,8 +74,15 @@ async def set_weight_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = query.message.chat_id
     logger.info(f"Переход в состояние SET_WEIGHT для пользователя {user_id}")
 
+    mode = await get_user_mode(user_id)
+    prompt = (
+        "✍️️ Введите ваш вес в кг (например, 70.5):"
+        if mode != "api"
+        else "✍️️ Введите ваш вес, чтобы добавить новое взвешивание в Gym-Stat.ru:"
+    )
+
     message = await query.message.edit_text(
-        "✍️️ Введите ваш вес в кг (например, 70.5):",
+        prompt,
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
