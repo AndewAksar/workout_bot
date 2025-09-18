@@ -54,6 +54,7 @@ from bot.handlers.misc_handlers import (
     show_training_settings,
     return_to_main_menu
 )
+from bot.handlers.weight_data import show_weight_data
 from handlers.set_age import set_age
 from handlers.set_weight import set_weight
 from handlers.set_height import set_height
@@ -67,7 +68,6 @@ from bot.config.settings import (
     SET_GENDER
 )
 from bot.ai_assistant.ai_handler import (
-    start_ai_assistant,
     choose_ai_model,
     start_chatgpt_assistant,
     start_gigachat_assistant,
@@ -134,6 +134,7 @@ def main() -> None:
             CallbackQueryHandler(show_personal_data_menu, pattern='^personal_data$'),
             CallbackQueryHandler(show_training_settings, pattern='^training_settings$'),
             CallbackQueryHandler(return_to_main_menu, pattern='^main_menu$'),
+            CallbackQueryHandler(show_weight_data, pattern='^weight_data_page_\\d+$'),
             CallbackQueryHandler(set_name_callback, pattern='^set_name$'),
             CallbackQueryHandler(set_age_callback, pattern='^set_age$'),
             CallbackQueryHandler(set_weight_callback, pattern='^set_weight$'),

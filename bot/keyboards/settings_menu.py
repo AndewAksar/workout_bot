@@ -23,6 +23,12 @@ def get_settings_menu():
         ],
         [
             InlineKeyboardButton(
+                "⚖️ Данные взвешивания",
+                callback_data='weight_data_page_1'
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "🔙 Назад в главное меню", callback_data='main_menu'
             )
         ]
