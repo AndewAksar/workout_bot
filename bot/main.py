@@ -54,7 +54,6 @@ from bot.handlers.misc_handlers import (
     show_training_settings,
     return_to_main_menu
 )
-from bot.handlers.body_params import show_body_params
 from bot.handlers.weight_data import show_weight_data
 from bot.handlers.body_params import (
     show_body_params,
@@ -149,8 +148,11 @@ def main() -> None:
             CallbackQueryHandler(set_weight_callback, pattern='^set_weight$'),
             CallbackQueryHandler(set_height_callback, pattern='^set_height$'),
             CallbackQueryHandler(set_gender_callback, pattern='^set_gender$'),
-            CallbackQueryHandler(prompt_body_param, pattern='^body_param_set_[a-z_]+$'),
-            CallbackQueryHandler(delete_body_params, pattern='^body_param_delete_all$'),
+            CallbackQueryHandler(
+                prompt_body_param,
+                pattern='^body_param_(date|neck|chest|waist|hips|thigh|calf|forearm|wrist)$'
+            ),
+            CallbackQueryHandler(delete_body_params, pattern='^delete_body_params$'),
         ],
         states={
             SET_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)],
