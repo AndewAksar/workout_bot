@@ -31,6 +31,7 @@ from telegram.constants import ParseMode
 
 from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
+from bot.utils.db_utils import get_user_mode
 from bot.keyboards.ai_assistant_menu import get_model_selection_menu
 from bot.ai_assistant.ai_api import (
     generate_gigachat_response,
@@ -145,9 +146,10 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Проверяем, что бот находится в состоянии AI_CONSULTATION
     if context.user_data.get('current_state') != 'AI_CONSULTATION':
         logger.warning(f"Некорректное состояние для handle_ai_message: {context.user_data.get('current_state')}")
+        mode = await get_user_mode(user_id)
         await update.message.reply_text(
             "⚠️ Пожалуйста, начните консультацию с AI заново.",
-            reply_markup=get_main_menu(),
+            reply_markup=get_main_menu(mode=mode),
             parse_mode=ParseMode.HTML
         )
         return ConversationHandler.END
@@ -300,9 +302,10 @@ async def end_ai_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Ошибка при удалении клавиатуры из сообщения {query.message.message_id}: {e}")
 
     # Отправляем новое сообщение с главным меню
+    mode = await get_user_mode(user_id)
     await query.message.reply_text(
         "🤖 Консультация завершена. Возвращаемся в главное меню.",
-        reply_markup=get_main_menu(),
+        reply_markup=get_main_menu(mode=mode),
         parse_mode=ParseMode.HTML
     )
 
@@ -368,11 +371,18 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         clear_user_data()
         return
 
+    mode = "local"
+    if user_id is not None:
+        try:
+            mode = await get_user_mode(user_id)
+        except Exception as mode_error:
+            logger.error(f"Не удалось получить режим пользователя {user_id}: {mode_error}")
+
     try:
         message = await context.bot.send_message(
             chat_id=chat_id,
             text="⚠️ Произошла ошибка. Попробуйте снова.",
-            reply_markup=get_main_menu(),
+            reply_markup=get_main_menu(mode=mode),
             parse_mode=ParseMode.HTML,
         )
         schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
@@ -389,7 +399,7 @@ async def ai_error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     message = await context.bot.send_message(
                         chat_id=chat_id,
                         text="⚠️ Произошла ошибка. Попробуйте снова.",
-                        reply_markup=get_main_menu(),
+                        reply_markup=get_main_menu(mode=mode),
                         parse_mode=ParseMode.HTML,
                     )
                     schedule_message_deletion(

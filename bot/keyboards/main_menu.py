@@ -15,7 +15,7 @@ from telegram import (
 )
 
 
-def get_main_menu():
+def get_main_menu(mode: str = "local"):
     """
     Создает главное меню бота.
     Описание:
@@ -46,4 +46,13 @@ def get_main_menu():
             )
         ]
     ]
+    if mode == "api":
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "🌐 Открыть Gym-Stat.ru",
+                    url="https://gym-stat.ru"
+                )
+            ]
+        )
     return InlineKeyboardMarkup(keyboard)

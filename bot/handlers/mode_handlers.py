@@ -179,11 +179,10 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
                     " позже через «🔄 Сменить режим»."
                 ),
                 parse_mode="HTML",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode="local"),
             )
             return
         await _update_user_mode(user_id, "api")
-
         token = await get_valid_access_token(user_id)
         if token:
             await query.message.edit_text(
@@ -192,7 +191,7 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "Текущая сессия Gym-Stat ещё действительна — можно"
                     " продолжать работу через главное меню."
                 ),
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode="api"),
             )
         else:
             await query.message.edit_text(
@@ -211,7 +210,7 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
                 "Можно продолжать вести заметки локально и при необходимости"
                 " снова подключить Gym-Stat через «🔄 Сменить режим»."
             ),
-            reply_markup=get_main_menu()
+            reply_markup=get_main_menu(mode="local")
         )
 
 

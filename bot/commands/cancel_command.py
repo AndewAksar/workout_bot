@@ -17,6 +17,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.main_menu import get_main_menu
 from bot.utils.message_deletion import schedule_message_deletion
+from bot.utils.db_utils import get_user_mode
 from bot.utils.logger import setup_logging
 
 
@@ -88,9 +89,14 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /cancel: {e}")
         try:
+            mode = await get_user_mode(user_id)
+        except Exception as mode_error:
+            logger.error(f"Не удалось определить режим пользователя {user_id}: {mode_error}")
+            mode = "local"
+        try:
             await update.message.reply_text(
                 "❌ Произошла ошибка при отмене. Возвращаемся в главное меню.",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode=mode),
                 parse_mode="HTML"
             )
             # Планируем удаление команды /cancel даже при ошибке

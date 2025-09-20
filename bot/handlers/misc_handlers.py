@@ -37,6 +37,8 @@ async def start_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} начал тренировку")
 
+    mode = await get_user_mode(user_id)
+
     await query.message.edit_text(
         (
             "🏋️‍♂️ <b>Тренировка начата!</b>\n"
@@ -47,7 +49,7 @@ async def start_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             " для полной истории."
         ),
         parse_mode="HTML",
-        reply_markup=get_main_menu()
+        reply_markup=get_main_menu(mode=mode)
     )
     context.user_data['conversation_active'] = False
     return ConversationHandler.END
@@ -72,7 +74,7 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     " «🗂️ Мои тренировки»."
                 ),
                 parse_mode="HTML",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode=mode),
             )
             context.user_data['conversation_active'] = False
             return ConversationHandler.END
@@ -100,7 +102,11 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     " а на сайте Gym-Stat добавьте подробности — после"
                     " синхронизации они появятся здесь."
                 )
-            await query.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu())
+            await query.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=get_main_menu(mode=mode)
+            )
         else:
             await query.message.edit_text(
                 (
@@ -109,7 +115,7 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     " или проверьте, авторизованы ли вы через /login."
                 ),
                 parse_mode="HTML",
-                reply_markup=get_main_menu()
+                reply_markup=get_main_menu(mode=mode)
             )
     else:
         await query.message.edit_text(
@@ -120,7 +126,7 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 " журнал, все заметки будут переноситься сюда."
             ),
             parse_mode="HTML",
-            reply_markup=get_main_menu(),
+            reply_markup=get_main_menu(mode=mode),
         )
     context.user_data['conversation_active'] = False
     return ConversationHandler.END
@@ -136,6 +142,7 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} открыл настройки")
 
+    mode = 'local'
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute(
@@ -165,7 +172,7 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         try:
             await query.message.reply_text(
                 "⚠️ Произошла ошибка при открытии настроек. Попробуйте снова.",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode=mode),
             )
         except Exception as reply_error:
             logger.error(f"Ошибка при отправке сообщения об ошибке для пользователя {user_id}: {reply_error}")
@@ -227,6 +234,8 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = query.from_user.id
     logger.info(f"Пользователь {user_id} вернулся в главное меню")
 
+    mode = await get_user_mode(user_id)
+
     await query.message.edit_text(
         (
             "💪 Готово! Ниже снова главное меню.\n"
@@ -236,7 +245,7 @@ async def return_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
             " раздел."
         ),
         parse_mode="HTML",
-        reply_markup=get_main_menu()
+        reply_markup=get_main_menu(mode=mode)
     )
     context.user_data['conversation_active'] = False
     return ConversationHandler.END

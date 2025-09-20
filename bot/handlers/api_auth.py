@@ -34,7 +34,7 @@ from bot.api.gym_stat_client import (
     get_weight_data
 )
 from bot.utils.encryption import encrypt_token
-from bot.utils.db_utils import save_api_tokens
+from bot.utils.db_utils import save_api_tokens, get_user_mode
 from bot.utils.logger import setup_logging
 from bot.keyboards.main_menu import get_main_menu
 from bot.utils.formatters import format_gender
@@ -442,7 +442,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(
             profile_text,
             parse_mode="HTML",
-            reply_markup=get_main_menu(),
+            reply_markup=get_main_menu(mode="api"),
         )
 
         return ConversationHandler.END
@@ -489,6 +489,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = message.chat_id
     message_id = message.message_id
 
+    mode = "local"
+    if isinstance(user_id, int):
+        try:
+            mode = await get_user_mode(user_id)
+        except Exception as mode_error:
+            logger.error(f"Не удалось получить режим пользователя {user_id}: {mode_error}")
+
     try:
         is_conversation_active = context.user_data.get("conversation_active", False)
         message_ids = [message_id]
@@ -497,7 +504,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         if is_conversation_active:
             message_text = "❌ Действие отменено."
-            reply_markup = get_main_menu()
+            reply_markup = get_main_menu(mode=mode)
             logger.info(f"Пользователь {user_id} отменил активный диалог.")
 
         else:
@@ -528,7 +535,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         try:
             await message.reply_text(
                 "❌ Произошла ошибка при отмене. Возвращаемся в главное меню.",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode=mode),
                 parse_mode="HTML",
             )
             schedule_message_deletion(
