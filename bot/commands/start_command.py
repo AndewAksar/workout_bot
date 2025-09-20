@@ -40,6 +40,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     username = user.username if user.username else "друг"
     first_name = user.first_name if user.first_name else ""
 
+    mode = "local"
+
     try:
         logger.info(f"Подключение к базе данных: {DB_PATH}, файл существует: {os.path.exists(DB_PATH)}")
         from bot.database.db_init import init_db
@@ -140,7 +142,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await update.message.reply_text(
                     greeting,
                     parse_mode="HTML",
-                    reply_markup=get_main_menu(),
+                    reply_markup=get_main_menu(mode=mode),
                 )
             else:
                 await update.message.reply_text(
@@ -158,7 +160,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(
                 greeting,
                 parse_mode="HTML",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(mode=mode),
             )
 
         # Планируем удаление только сообщения с командой /start
@@ -173,7 +175,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Ошибка базы данных для пользователя {user_id}: {e}")
         sent_message = await update.message.reply_text(
             "❌ Произошла ошибка при создании профиля. Попробуйте снова.",
-            reply_markup=get_main_menu()
+            reply_markup=get_main_menu(mode=mode)
         )
 
         # Планируем удаление только сообщения с командой /start даже при ошибке
@@ -188,7 +190,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Неожиданная ошибка для пользователя {user_id}: {e}")
         sent_message = await update.message.reply_text(
             "❌ Произошла непредвиденная ошибка. Попробуйте снова позже.",
-            reply_markup=get_main_menu()
+            reply_markup=get_main_menu(mode=mode)
         )
         # Планируем удаление только сообщения с командой /start даже при ошибке
         schedule_message_deletion(

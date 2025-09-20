@@ -14,6 +14,7 @@ from bot.utils.logger import setup_logging
 from telegram.ext import ContextTypes
 
 from bot.keyboards.main_menu import get_main_menu
+from bot.utils.db_utils import get_user_mode
 
 
 logger = setup_logging()
@@ -26,11 +27,13 @@ async def timeout_handler(context: ContextTypes.DEFAULT_TYPE) -> None:
     job = context.job
     chat_id = job.data['chat_id']
 
+    mode = await get_user_mode(chat_id)
+
     try:
         await context.bot.send_message(
             chat_id=chat_id,
             text="⏰ Время для ввода истекло. Возвращаемся в главное меню.",
-            reply_markup=get_main_menu()
+            reply_markup=get_main_menu(mode=mode)
         )
         context.user_data['conversation_active'] = False
     except Exception as e:
