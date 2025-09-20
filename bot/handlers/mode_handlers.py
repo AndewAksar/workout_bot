@@ -26,11 +26,11 @@ from bot.config.settings import (
     GYMSTAT_API_URL
 )
 from bot.keyboards.main_menu import get_main_menu
-from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.mode_selection import (
     get_mode_selection_keyboard,
     get_api_auth_keyboard,
 )
+from bot.utils.api_session import get_valid_access_token
 from bot.utils.logger import setup_logging
 
 
@@ -183,14 +183,26 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return
         await _update_user_mode(user_id, "api")
-        await query.message.edit_text(
-            (
-                "Режим изменён на интеграцию с Gym-Stat.ru.\n"
-                "Сначала выполните вход или регистрацию, чтобы загрузить"
-                " профиль и историю веса."
-            ),
-            reply_markup=get_api_auth_keyboard(),
-        )
+
+        token = await get_valid_access_token(user_id)
+        if token:
+            await query.message.edit_text(
+                (
+                    "Режим изменён на интеграцию с Gym-Stat.ru.\n"
+                    "Текущая сессия Gym-Stat ещё действительна — можно"
+                    " продолжать работу через главное меню."
+                ),
+                reply_markup=get_main_menu(),
+            )
+        else:
+            await query.message.edit_text(
+                (
+                    "Режим изменён на интеграцию с Gym-Stat.ru.\n"
+                    "Сначала выполните вход или регистрацию, чтобы загрузить"
+                    " профиль и историю веса."
+                ),
+                reply_markup=get_api_auth_keyboard(),
+            )
     else:
         await _update_user_mode(user_id, "local")
         await query.message.edit_text(
