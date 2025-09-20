@@ -26,7 +26,6 @@ from bot.config.settings import (
     GYMSTAT_API_URL
 )
 from bot.keyboards.main_menu import get_main_menu
-from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.mode_selection import (
     get_mode_selection_keyboard,
     get_api_auth_keyboard,
