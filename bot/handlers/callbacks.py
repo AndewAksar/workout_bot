@@ -40,7 +40,12 @@ async def set_name_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     logger.info(f"Переход в состояние SET_NAME для пользователя {user_id}")
 
     message = await query.message.edit_text(
-        "✍️ Введите ваше имя:",
+        (
+            "✍️ <b>Введите имя</b>\n"
+            "Например: <code>Иван</code>. Имя появится в приветствиях, профиле"
+            " и в подсказках AI. Если захотите отменить ввод, нажмите /cancel."
+        ),
+        parse_mode="HTML",
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
@@ -56,7 +61,12 @@ async def set_age_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     logger.info(f"Переход в состояние SET_AGE для пользователя {user_id}")
 
     message = await query.message.edit_text(
-        "✍️ Введите ваш возраст (число):",
+        (
+            "✍️ <b>Введите возраст</b>\n"
+            "Укажите целое число от 0 до 150. Пример: <code>29</code>."
+            " Эти данные помогут формировать рекомендации. /cancel — выход."
+        ),
+        parse_mode="HTML",
         reply_markup=None
     )
 
@@ -76,13 +86,18 @@ async def set_weight_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     mode = await get_user_mode(user_id)
     prompt = (
-        "✍️️ Введите ваш вес в кг (например, 70.5):"
+        "✍️️ <b>Введите вес</b> в кг. Используйте точку или запятую:"
+        " пример <code>70.5</code>."
         if mode != "api"
-        else "✍️️ Введите ваш вес, чтобы добавить новое взвешивание в Gym-Stat.ru:"
+        else (
+            "✍️️ <b>Добавьте взвешивание</b>. Введите вес в кг — запись"
+            " сразу сохранится в Gym-Stat и появится в истории."
+        )
     )
 
     message = await query.message.edit_text(
         prompt,
+        parse_mode="HTML",
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
@@ -98,7 +113,12 @@ async def set_height_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     logger.info(f"Переход в состояние SET_HEIGHT для пользователя {user_id}")
 
     message = await query.message.edit_text(
-        "✍️ Введите ваш рост в см (например, 175):",
+        (
+            "✍️ <b>Введите рост</b> в сантиметрах. Пример: <code>175</code>."
+            " Если знаете значение с десятыми, можно указать <code>175.5</code>."
+            " /cancel — отмена ввода."
+        ),
+        parse_mode="HTML",
         reply_markup=None
     )
     context.user_data['conversation_active'] = True
@@ -114,7 +134,12 @@ async def set_gender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     logger.info(f"Переход в состояние SET_GENDER для пользователя {user_id}")
 
     message = await query.message.edit_text(
-        "✍️ Введите ваш пол (мужской/женский):",
+        (
+            "✍️ <b>Введите пол</b> в формате <code>мужской</code> или"
+            " <code>женский</code>. Эти данные нужны для корректных"
+            " рекомендаций. /cancel — отмена."
+        ),
+        parse_mode="HTML",
         reply_markup=None
     )
     context.user_data['conversation_active'] = True

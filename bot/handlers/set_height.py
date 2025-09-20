@@ -183,7 +183,13 @@ async def set_height(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             return ConversationHandler.END
 
     confirmation_message = await message.reply_text(
-        f"✅ Рост обновлен: {height:g} см",
+        (
+            f"✅ Рост обновлён: <b>{height:g}</b> см.\n"
+            "Параметр используется в профиле и подсказках AI."
+            " При необходимости обновите другие показатели или"
+            " проверьте результат через кнопку «👤 Показать профиль»."
+        ),
+        parse_mode="HTML",
         reply_markup=get_personal_data_menu(),
     )
     schedule_message_deletion(

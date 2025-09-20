@@ -208,13 +208,20 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 display_date = saved_date
 
         confirmation = (
-            f"✅ Вес обновлен: {saved_weight} кг"
+            f"✅ Вес обновлён: <b>{saved_weight}</b> кг"
             if not display_date
-            else f"✅ Вес обновлен: {saved_weight} кг (от {display_date})"
+            else f"✅ Вес обновлён: <b>{saved_weight}</b> кг (от {display_date})"
+        )
+
+        confirmation += (
+            "\nЗапись сразу попала в историю Gym-Stat."
+            " Откройте «⚖️ Данные взвешивания», чтобы просмотреть журнал"
+            " и при необходимости скорректировать данные на сайте."
         )
 
         await message.reply_text(
             confirmation,
+            parse_mode="HTML",
             reply_markup=get_personal_data_menu(),
         )
         schedule_message_deletion(
@@ -261,7 +268,13 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     logger.info("Вес успешно обновлён для пользователя %s: %s", user_id, weight)
     await message.reply_text(
-        f"✅ Вес обновлен: {weight} кг",
+        (
+            f"✅ Вес обновлён: <b>{weight}</b> кг.\n"
+            "Сохранили значение локально. Если позже подключитесь к"
+            " Gym-Stat, добавьте запись вручную через раздел веса."
+            " Проверить данные можно в меню «👤 Показать профиль»."
+        ),
+        parse_mode="HTML",
         reply_markup=get_personal_data_menu(),
     )
     schedule_message_deletion(
