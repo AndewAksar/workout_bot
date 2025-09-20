@@ -1,372 +1,783 @@
 # bot/handlers/body_params.py
-"""Обработчик отображения замеров тела пользователя."""
+"""Обработчики отображения и обновления параметров тела пользователя через Gym-Stat."""
 
 from __future__ import annotations
 
 import html
-from typing import Any, Callable
+import re
+from datetime import datetime, timezone
+from typing import Any, Iterable, Tuple
 
-import aiosqlite
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import httpx
+from telegram import Update
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes, ConversationHandler
 
-from bot.config.settings import (
-    DB_PATH,
-    SET_BODY_PARAM,
+from bot.api.gym_stat_client import (
+    create_body_params as api_create_body_params,
+    delete_body_params as api_delete_body_params,
+    get_body_params as api_get_body_params,
+    update_body_params as api_update_body_params,
 )
-from bot.handlers.set_age import set_age
-from bot.handlers.set_gender import set_gender
-from bot.handlers.set_height import set_height
-from bot.handlers.set_name import set_name
-from bot.handlers.set_weight import set_weight
+from bot.config.settings import SET_BODY_PARAM
+from bot.keyboards.body_params_menu import get_body_params_menu
+from bot.utils.api_session import get_valid_access_token
 from bot.utils.db_utils import get_user_mode
-from bot.utils.formatters import format_gender
 from bot.utils.logger import setup_logging
+from bot.utils.message_deletion import schedule_message_deletion
 
 logger = setup_logging()
 
-BodyParamHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Any]
+DATE_INPUT_PATTERN = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d{4}$")
 
-
-def _get_body_params_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
-        [InlineKeyboardButton("Имя", callback_data="body_param_set_name")],
-        [
-            InlineKeyboardButton("Пол", callback_data="body_param_set_gender"),
-            InlineKeyboardButton("Возраст", callback_data="body_param_set_age"),
-        ],
-        [
-            InlineKeyboardButton("Вес", callback_data="body_param_set_weight"),
-            InlineKeyboardButton("Рост", callback_data="body_param_set_height"),
-        ],
-        [
-            InlineKeyboardButton(
-                "🗑️ Очистить значения",
-                callback_data="body_param_delete_all",
-            )
-        ],
-        [InlineKeyboardButton("🔙 Назад", callback_data="settings")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-async def _ensure_user_row(db: aiosqlite.Connection, user_id: int) -> None:
-    async with db.execute(
-        "SELECT 1 FROM UserSettings WHERE user_id = ?",
-        (user_id,),
-    ) as cursor:
-        if await cursor.fetchone():
-            return
-    await db.execute(
-        "INSERT INTO UserSettings (user_id) VALUES (?)",
-        (user_id,),
-    )
-
-
-async def _fetch_body_params(user_id: int) -> dict[str, Any]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            """
-            SELECT name, gender, age, weight, height
-            FROM UserSettings
-            WHERE user_id = ?
-            """,
-            (user_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-    if not row:
-        return {
-            "name": None,
-            "gender": None,
-            "age": None,
-            "weight": None,
-            "height": None,
-        }
-    return {
-        "name": row[0],
-        "gender": row[1],
-        "age": row[2],
-        "weight": row[3],
-        "height": row[4],
-    }
-
-
-def _format_value(param: str, value: Any) -> str:
-    if value is None or value == "":
-        return "<i>Не указано</i>"
-    if param == "gender":
-        return html.escape(format_gender(value))
-    if isinstance(value, (int, float)):
-        formatted = format(value, "g")
-        return html.escape(formatted)
-    return html.escape(str(value))
-
-
-PARAM_CONFIG: dict[str, dict[str, Any]] = {
-    "name": {
-        "title": "Имя",
-        "prompt": (
-            "✍️ <b>Введите имя</b>\n"
-            "Например: <code>Иван</code>. /cancel — отменить ввод."
-        ),
-        "handler": set_name,
-        "state_key": "SET_NAME",
-    },
-    "gender": {
-        "title": "Пол",
-        "prompt": (
-            "✍️ <b>Введите пол</b> в формате <code>мужской</code> или <code>женский</code>."
-            " /cancel — отмена."
-        ),
-        "handler": set_gender,
-        "state_key": "SET_GENDER",
-    },
-    "age": {
-        "title": "Возраст",
-        "prompt": (
-            "✍️ <b>Введите возраст</b> — целое число от 0 до 150."
-            " Пример: <code>29</code>. /cancel — отменить."
-        ),
-        "handler": set_age,
-        "state_key": "SET_AGE",
-    },
-    "weight": {
-        "title": "Вес",
-        "prompt": lambda mode: (
-            "✍️ <b>Введите вес</b> в килограммах."
-            " Можно использовать точку или запятую: пример <code>70.5</code>."
-            " /cancel — отменить."
-            if mode != "api"
-            else (
-                "✍️ <b>Добавьте взвешивание</b>. Введите вес в кг — запись"
-                " сразу появится в истории Gym-Stat. /cancel — отменить."
-            )
-        ),
-        "handler": set_weight,
-        "state_key": "SET_WEIGHT",
-    },
-    "height": {
-        "title": "Рост",
-        "prompt": (
-            "✍️ <b>Введите рост</b> в сантиметрах. Пример: <code>175</code>."
-            " /cancel — отменить ввод."
-        ),
-        "handler": set_height,
-        "state_key": "SET_HEIGHT",
-    },
+FIELD_TITLES = {
+    "date": "Дата замеров",
+    "neck": "Шея",
+    "chest": "Грудь",
+    "waist": "Талия",
+    "hips": "Бёдра",
+    "thigh": "Бедро",
+    "calf": "Икра",
+    "forearm": "Предплечье",
+    "wrist": "Запястье",
 }
 
-PARAM_ORDER = ["name", "gender", "age", "weight", "height"]
+MEASUREMENT_KEYS = [
+    "neck",
+    "chest",
+    "waist",
+    "hips",
+    "thigh",
+    "calf",
+    "forearm",
+    "wrist",
+]
+
+CARD_ORDER = ["date", *MEASUREMENT_KEYS]
 
 
-async def _render_body_params_text(user_id: int) -> str:
-    values = await _fetch_body_params(user_id)
-    lines = [
-        "📊 <b>Параметры тела</b>",
-        "Здесь собраны основные показатели. Выберите пункт ниже, чтобы обновить значение.",
-        "",
-    ]
-    for key in PARAM_ORDER:
-        config = PARAM_CONFIG[key]
-        value = _format_value(key, values.get(key))
-        if value.startswith("<i>"):
-            lines.append(f"• {config['title']}: {value}")
-        else:
-            lines.append(f"• {config['title']}: <code>{value}</code>")
+def _normalize_entries(payload: Any) -> list[dict[str, Any]]:
+    """Приводит ответ API к списку словарей."""
+
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("data", "results", "items", "records"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        if any(key in payload for key in ("uuid", "date", "createdAt", "created_at")):
+            return [payload]
+    return []
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    """Преобразует строку или datetime в объект datetime для сортировки."""
+
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(normalized)
+        except ValueError:
+            try:
+                dt = datetime.strptime(normalized, "%Y-%m-%d")
+            except ValueError:
+                return None
+        if dt.tzinfo:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+    return None
+
+
+def _entry_sort_key(entry: dict[str, Any]) -> datetime:
+    """Возвращает ключ сортировки для записи обмеров."""
+
+    for field in ("date", "createdAt", "created_at", "updatedAt", "updated_at"):
+        dt = _parse_datetime(entry.get(field))
+        if dt:
+            return dt
+    return datetime.min
+
+
+def _normalize_mm_value(value: Any) -> float | None:
+    """Преобразует значение окружности в число с плавающей точкой."""
+
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _normalize_date_value(value: Any) -> str | None:
+    """Преобразует дату к формату YYYY-MM-DD."""
+
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, str):
+        text = value.strip()
+        if DATE_INPUT_PATTERN.match(text):
+            dt = datetime.strptime(text, "%d.%m.%Y")
+            return dt.date().isoformat()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            return text
+        normalized = text.replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if dt.tzinfo:
+            dt = dt.astimezone(timezone.utc)
+        return dt.date().isoformat()
+    return None
+
+
+def _format_date_for_display(value: Any) -> str | None:
+    """Форматирует дату для отображения пользователю."""
+
+    iso_value = _normalize_date_value(value)
+    if not iso_value:
+        return None
+    try:
+        dt = datetime.strptime(iso_value, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return dt.strftime("%d.%m.%Y")
+
+
+def _format_mm(value: Any) -> str:
+    """Возвращает форматированное значение окружности в мм."""
+
+    if value is None:
+        return "<i>Не указано</i>"
+    if isinstance(value, (int, float)):
+        formatted = f"{float(value):.1f}".rstrip("0").rstrip(".")
+        return f"<code>{formatted}</code> мм"
+    text = str(value).strip()
+    if not text:
+        return "<i>Не указано</i>"
+    try:
+        number = float(text.replace(",", "."))
+    except ValueError:
+        return html.escape(text)
+    formatted = f"{number:.1f}".rstrip("0").rstrip(".")
+    return f"<code>{formatted}</code> мм"
+
+
+def _build_card_text(values: dict[str, Any] | None, status: str | None = None) -> str:
+    """Формирует текстовую карточку с обмерами."""
+
+    lines: list[str] = ["📏 <b>Обмеры тела</b>"]
+    if status:
+        lines.append(status)
     lines.append(
-        "\nНажмите нужную кнопку, чтобы изменить показатель, или очистите их все."
+        "Эти окружности в миллиметрах мы используем для расчёта процента жира и персональных рекомендаций."
     )
+    lines.append("")
+
+    if not values:
+        lines.append("📭 Пока нет сохранённых замеров.")
+        lines.append(
+            "Начните с кнопки «Дата» или добавьте любую окружность — мы создадим запись в Gym-Stat автоматически."
+        )
+        return "\n".join(lines)
+
+    display_date = _format_date_for_display(values.get("date"))
+    if display_date:
+        lines.append(f"🗓️ {FIELD_TITLES['date']}: <code>{display_date}</code>")
+    else:
+        lines.append(f"🗓️ {FIELD_TITLES['date']}: <i>Не указана</i>")
+    lines.append("")
+
+    for key in MEASUREMENT_KEYS:
+        title = FIELD_TITLES[key]
+        lines.append(f"• {title}: {_format_mm(values.get(key))}")
+
+    lines.append("")
+    lines.append("Обновите показатели через кнопки ниже — мы синхронизируем данные с Gym-Stat.")
     return "\n".join(lines)
 
 
+def _store_entry(context: ContextTypes.DEFAULT_TYPE, entry: dict[str, Any] | None) -> dict[str, Any]:
+    """Сохраняет текущие значения обмеров в контексте пользователя."""
+
+    values: dict[str, Any] = {"date": None}
+    for key in MEASUREMENT_KEYS:
+        values[key] = None
+
+    if entry:
+        uuid = entry.get("uuid") or entry.get("id")
+        if uuid:
+            context.user_data["body_params_uuid"] = uuid
+        else:
+            context.user_data.pop("body_params_uuid", None)
+        iso_date = _normalize_date_value(
+            entry.get("date")
+            or entry.get("measurementDate")
+            or entry.get("measurement_date")
+            or entry.get("createdAt")
+            or entry.get("created_at")
+        )
+        if iso_date:
+            values["date"] = iso_date
+        for key in MEASUREMENT_KEYS:
+            values[key] = _normalize_mm_value(entry.get(key))
+    else:
+        context.user_data.pop("body_params_uuid", None)
+
+    context.user_data["body_params_values"] = values
+    return values
+
+
+def _extract_error_message(response: httpx.Response) -> str | None:
+    """Извлекает сообщение об ошибке из ответа API."""
+
+    try:
+        payload = response.json()
+    except ValueError:
+        text = response.text.strip()
+        return text or None
+
+    if isinstance(payload, dict):
+        for key in ("detail", "message", "error"):
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value
+        errors = payload.get("errors")
+        if isinstance(errors, Iterable):
+            for item in errors:
+                if isinstance(item, str):
+                    return item
+    return None
+
+
+async def _fetch_latest_entry(token: str) -> Tuple[dict[str, Any] | None, str | None]:
+    """Получает последнюю запись обмеров через API."""
+
+    try:
+        response = await api_get_body_params(token)
+    except httpx.HTTPError as exc:  # noqa: BLE001
+        logger.error("Ошибка HTTP при запросе обмеров тела: %s", exc)
+        return None, "Не удалось связаться с Gym-Stat. Попробуйте позже."
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Неожиданная ошибка при запросе обмеров тела: %s", exc)
+        return None, "Не удалось загрузить параметры. Попробуйте позже."
+
+    if response.status_code >= 400:
+        logger.warning(
+            "Gym-Stat вернул %s при получении обмеров: %s",
+            response.status_code,
+            response.text,
+        )
+        error_text = _extract_error_message(response)
+        return None, error_text or "Не удалось получить параметры. Попробуйте позже."
+
+    try:
+        payload = response.json()
+    except ValueError:
+        logger.error("Некорректный JSON при запросе обмеров: %s", response.text)
+        return None, "Сервер Gym-Stat вернул некорректный ответ."
+
+    entries = _normalize_entries(payload)
+    if not entries:
+        return None, None
+
+    latest = max(entries, key=_entry_sort_key)
+    return latest, None
+
+
+async def _load_and_store(context: ContextTypes.DEFAULT_TYPE, token: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Загружает последнюю запись и сохраняет её в контексте."""
+
+    entry, error = await _fetch_latest_entry(token)
+    if entry:
+        values = _store_entry(context, entry)
+    else:
+        context.user_data.pop("body_params_uuid", None)
+        context.user_data["body_params_values"] = {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
+        values = context.user_data["body_params_values"]
+    return values, error
+
+
+async def _refresh_card(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    message_id: int | None,
+    token: str | None,
+    status: str | None = None,
+    skip_fetch: bool = False,
+) -> None:
+    """Перерисовывает карточку с обмерами."""
+
+    values: dict[str, Any] | None = None
+    has_data = False
+    status_message = status
+
+    if not skip_fetch and token:
+        values, error = await _load_and_store(context, token)
+        if error and not status_message:
+            status_message = f"❌ {html.escape(error)}"
+        has_data = bool(context.user_data.get("body_params_uuid"))
+    else:
+        values = context.user_data.get("body_params_values")
+        has_data = bool(context.user_data.get("body_params_uuid"))
+
+    text = _build_card_text(values, status=status_message)
+    keyboard = get_body_params_menu(has_data=has_data)
+
+    if message_id is not None:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+            context.user_data["body_params_message"] = (chat_id, message_id)
+            return
+        except (BadRequest, TelegramError) as exc:
+            logger.warning("Не удалось обновить сообщение с параметрами тела: %s", exc)
+
+    sent = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+    context.user_data["body_params_message"] = (sent.chat_id, sent.message_id)
+
+
+async def _render_placeholder(
+    query, context: ContextTypes.DEFAULT_TYPE, text: str
+) -> None:
+    """Отображает заглушку и сбрасывает сохранённые данные."""
+
+    context.user_data.pop("body_params_uuid", None)
+    context.user_data["body_params_values"] = {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
+
+    message = getattr(query, "message", None)
+    if not message:
+        return
+
+    await message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_body_params_menu(has_data=False),
+    )
+    context.user_data["body_params_message"] = (message.chat_id, message.message_id)
+
+
 async def show_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Показывает последнюю запись обмеров пользователя."""
+
     query = update.callback_query
     if not query:
         logger.warning("show_body_params вызван без callback_query")
         return ConversationHandler.END
+
     await query.answer()
     user_id = query.from_user.id
-    logger.info("Пользователь %s открыл меню параметров тела", user_id)
 
     context.user_data.pop("pending_body_param", None)
     context.user_data.pop("current_state", None)
     context.user_data["conversation_active"] = False
 
-    try:
-        text = await _render_body_params_text(user_id)
-    except aiosqlite.Error as exc:  # noqa: BLE001
-        logger.error(
-            "Ошибка чтения параметров тела пользователя %s: %s",
-            user_id,
-            exc,
-        )
-        await query.message.edit_text(
-            "❌ Не удалось получить сохранённые параметры. Попробуйте позже.",
-            parse_mode="HTML",
-            reply_markup=_get_body_params_keyboard(),
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await _render_placeholder(
+            query,
+            context,
+            (
+                "🌐 <b>Доступно в режиме Gym-Stat</b>\n"
+                "Подключите аккаунт Gym-Stat, чтобы видеть и обновлять измерения тела."
+            ),
         )
         return ConversationHandler.END
 
-    await query.message.edit_text(
-        text,
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await _render_placeholder(
+            query,
+            context,
+            (
+                "🔐 <b>Требуется авторизация</b>\n"
+                "Войдите через /login, чтобы загрузить замеры из Gym-Stat."
+            ),
+        )
+        return ConversationHandler.END
+
+    values, error = await _load_and_store(context, token)
+    status = f"❌ {html.escape(error)}" if error else None
+
+    message = query.message
+    if not message:
+        return ConversationHandler.END
+
+    await message.edit_text(
+        _build_card_text(values, status=status),
         parse_mode="HTML",
-        reply_markup=_get_body_params_keyboard(),
+        reply_markup=get_body_params_menu(has_data=bool(context.user_data.get("body_params_uuid"))),
     )
+    context.user_data["body_params_message"] = (message.chat_id, message.message_id)
     return ConversationHandler.END
 
 
 async def prompt_body_param(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запрашивает у пользователя значение конкретного параметра."""
+
     query = update.callback_query
     if not query:
         logger.warning("prompt_body_param вызван без callback_query")
         return ConversationHandler.END
-    await query.answer()
 
-    user_id = query.from_user.id
+    await query.answer()
     raw_data = query.data or ""
-    param_key = raw_data.replace("body_param_set_", "", 1)
-    config = PARAM_CONFIG.get(param_key)
-    if not config:
-        logger.warning("Неизвестный параметр %s для пользователя %s", raw_data, user_id)
-        if query.message:
-            await query.message.reply_text(
-                "⚠️ Неизвестный параметр. Вернитесь в меню и попробуйте снова.",
-            )
+    if not raw_data.startswith("body_param_"):
+        logger.warning("Получен неизвестный callback: %s", raw_data)
         return ConversationHandler.END
 
-    try:
-        mode = await get_user_mode(user_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "Не удалось определить режим пользователя %s перед вводом параметра: %s",
-            user_id,
-            exc,
+    param_key = raw_data.replace("body_param_", "", 1)
+    if param_key not in FIELD_TITLES:
+        logger.warning("Неизвестный параметр %s", param_key)
+        return ConversationHandler.END
+
+    user_id = query.from_user.id
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await _render_placeholder(
+            query,
+            context,
+            (
+                "🌐 <b>Доступно в режиме Gym-Stat</b>\n"
+                "Переключитесь на интеграцию, чтобы редактировать параметры."
+            ),
         )
-        mode = "local"
-    prompt_text = config["prompt"]
-    if callable(prompt_text):
-        prompt_message = prompt_text(mode)
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await _render_placeholder(
+            query,
+            context,
+            (
+                "🔐 <b>Нужна авторизация</b>\n"
+                "Используйте /login, чтобы продолжить работу с замерами."
+            ),
+        )
+        return ConversationHandler.END
+
+    values = context.user_data.get("body_params_values", {})
+
+    prompt_lines: list[str] = []
+    if param_key == "date":
+        prompt_lines.append("✍️ <b>Введите дату замеров</b>")
+        current_date = _format_date_for_display(values.get("date"))
+        if current_date:
+            prompt_lines.append(f"Текущее значение: <code>{current_date}</code>")
+        prompt_lines.append("Формат: <code>ДД.ММ.ГГГГ</code>.")
+        prompt_lines.append("/cancel — отменить ввод.")
     else:
-        prompt_message = prompt_text
+        title = FIELD_TITLES[param_key]
+        prompt_lines.append(f"✍️ <b>Введите окружность для «{title}»</b>")
+        current_value = values.get(param_key)
+        if current_value not in (None, ""):
+            prompt_lines.append(f"Сейчас: {_format_mm(current_value)}")
+        prompt_lines.append("Укажите значение в миллиметрах (например, <code>420</code>).")
+        prompt_lines.append("/cancel — отменить ввод.")
 
     context.user_data["pending_body_param"] = param_key
     context.user_data["conversation_active"] = True
     context.user_data["current_state"] = "SET_BODY_PARAM"
 
-    await query.message.edit_text(
-        prompt_message,
-        parse_mode="HTML",
-        reply_markup=None,
-    )
-    logger.info(
-        "Пользователь %s запрашивает обновление параметра %s",
-        user_id,
-        param_key,
-    )
+    message = query.message
+    if message:
+        await message.edit_text("\n".join(prompt_lines), parse_mode="HTML")
+        context.user_data["body_params_message"] = (message.chat_id, message.message_id)
+
     return SET_BODY_PARAM
 
 
 async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает текстовый ввод значения параметра."""
+
+    message = update.message
+    if message is None:
+        return ConversationHandler.END
+
+    user_id = message.from_user.id
+    chat_id = message.chat_id
+    user_message_id = message.message_id
     param_key = context.user_data.get("pending_body_param")
+
     if not param_key:
-        logger.warning("handle_body_param_input вызван без pending_body_param")
-        if update.message:
-            await update.message.reply_text(
-                "⚠️ Используйте меню параметров, чтобы изменить значение.",
-            )
+        warning = await message.reply_text(
+            "⚠️ Используйте меню параметров, чтобы обновить значение."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning.message_id],
+            chat_id,
+            delay=10,
+        )
         context.user_data["conversation_active"] = False
         context.user_data.pop("current_state", None)
         return ConversationHandler.END
 
-    config = PARAM_CONFIG.get(param_key)
-    handler: BodyParamHandler | None = None
-    state_key = None
-    if config:
-        handler = config.get("handler")
-        state_key = config.get("state_key")
-    if not handler:
-        logger.error("Не найден обработчик для параметра %s", param_key)
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        warning = await message.reply_text(
+            "🌐 Изменение обмеров доступно только после подключения Gym-Stat."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning.message_id],
+            chat_id,
+            delay=10,
+        )
+        context.user_data["conversation_active"] = False
         context.user_data.pop("pending_body_param", None)
-        context.user_data["conversation_active"] = False
         context.user_data.pop("current_state", None)
-        if update.message:
-            await update.message.reply_text(
-                "⚠️ Не удалось обновить параметр. Попробуйте снова через меню.",
-            )
         return ConversationHandler.END
 
-    if state_key:
-        context.user_data["current_state"] = state_key
+    token = await get_valid_access_token(user_id)
+    if not token:
+        warning = await message.reply_text(
+            "🔐 Для сохранения замеров войдите через /login."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning.message_id],
+            chat_id,
+            delay=10,
+        )
+        context.user_data["conversation_active"] = False
+        context.user_data.pop("pending_body_param", None)
+        context.user_data.pop("current_state", None)
+        return ConversationHandler.END
+
+    message_info = context.user_data.get("body_params_message")
+    card_chat_id, card_message_id = (message_info or (chat_id, None))
+
+    raw_text = (message.text or "").strip()
+
+    async def _abort_with_error(text: str, status: str) -> int:
+        reply = await message.reply_text(text)
+        schedule_message_deletion(
+            context,
+            [user_message_id, reply.message_id],
+            chat_id,
+            delay=10,
+        )
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status=status,
+            skip_fetch=True,
+        )
+        context.user_data["conversation_active"] = False
+        context.user_data.pop("pending_body_param", None)
+        context.user_data.pop("current_state", None)
+        return ConversationHandler.END
+
+    if param_key == "date":
+        if not DATE_INPUT_PATTERN.match(raw_text):
+            return await _abort_with_error(
+                "⚠️ Введите дату в формате ДД.ММ.ГГГГ.",
+                "⚠️ Неверный формат даты. Попробуйте ещё раз.",
+            )
+        dt = datetime.strptime(raw_text, "%d.%m.%Y")
+        payload_value: Any = dt.date().isoformat()
+    else:
+        normalized = raw_text.replace(",", ".")
+        try:
+            value = float(normalized)
+        except ValueError:
+            return await _abort_with_error(
+                "⚠️ Пожалуйста, введите число в миллиметрах (например, 420).",
+                "⚠️ Некорректное значение. Укажите окружность в мм.",
+            )
+        if value <= 0 or value > 2000:
+            return await _abort_with_error(
+                "⚠️ Допустимый диапазон окружностей — от 1 до 2000 мм.",
+                "⚠️ Значение вне допустимого диапазона.",
+            )
+        payload_value = int(round(value)) if abs(value - round(value)) < 1e-4 else round(value, 1)
+
+    payload = {param_key: payload_value}
+    existing_values = context.user_data.get("body_params_values", {})
+    uuid = context.user_data.get("body_params_uuid")
 
     try:
-        result = await handler(update, context)
-    finally:
-        context.user_data.pop("pending_body_param", None)
-        if context.user_data.get("current_state") == "SET_BODY_PARAM":
-            context.user_data.pop("current_state", None)
-    return result
+        if uuid:
+            response = await api_update_body_params(token, uuid, payload)
+        else:
+            create_payload = {
+                field: existing_values.get(field)
+                for field in CARD_ORDER
+                if existing_values.get(field) not in (None, "")
+            }
+            create_payload.update(payload)
+            response = await api_create_body_params(token, create_payload)
+    except httpx.HTTPError as exc:  # noqa: BLE001
+        logger.error("Ошибка HTTP при сохранении обмеров: %s", exc)
+        return await _abort_with_error(
+            "❌ Не удалось отправить данные. Попробуйте позже.",
+            "❌ Не удалось сохранить значение. Попробуйте позже.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Неожиданная ошибка при сохранении обмеров: %s", exc)
+        return await _abort_with_error(
+            "❌ Произошла ошибка при сохранении параметров.",
+            "❌ Не удалось сохранить значение. Попробуйте позже.",
+        )
+
+    if response.status_code >= 400:
+        error_text = _extract_error_message(response) or "Не удалось сохранить параметр."
+        return await _abort_with_error(
+            f"⚠️ {error_text}",
+            f"❌ {html.escape(error_text)}",
+        )
+
+    status_message = (
+        "✅ Дата замеров обновлена."
+        if param_key == "date"
+        else f"✅ Значение «{FIELD_TITLES[param_key]}» сохранено."
+    )
+
+    await _refresh_card(
+        context,
+        chat_id=card_chat_id,
+        message_id=card_message_id,
+        token=token,
+        status=status_message,
+    )
+
+    schedule_message_deletion(context, [user_message_id], chat_id, delay=5)
+    context.user_data["conversation_active"] = False
+    context.user_data.pop("pending_body_param", None)
+    context.user_data.pop("current_state", None)
+    return ConversationHandler.END
 
 
 async def delete_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Удаляет текущую запись обмеров пользователя."""
+
     query = update.callback_query
     if not query:
         logger.warning("delete_body_params вызван без callback_query")
         return ConversationHandler.END
+
     await query.answer()
-
     user_id = query.from_user.id
-    logger.info("Пользователь %s очищает параметры тела", user_id)
+
     context.user_data.pop("pending_body_param", None)
-    context.user_data["conversation_active"] = False
     context.user_data.pop("current_state", None)
+    context.user_data["conversation_active"] = False
 
-    try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await _ensure_user_row(db, user_id)
-            await db.execute(
-                """
-                UPDATE UserSettings
-                SET name = NULL,
-                    age = NULL,
-                    weight = NULL,
-                    height = NULL,
-                    gender = NULL
-                WHERE user_id = ?
-                """,
-                (user_id,),
-            )
-            await db.commit()
-    except aiosqlite.Error as exc:  # noqa: BLE001
-        logger.error(
-            "Ошибка очистки параметров тела пользователя %s: %s",
-            user_id,
-            exc,
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await _render_placeholder(
+            query,
+            context,
+            (
+                "🌐 <b>Только для режима Gym-Stat</b>\n"
+                "Переключитесь на интеграцию, чтобы управлять измерениями."
+            ),
         )
-        await query.message.edit_text(
-            "❌ Не удалось очистить данные. Попробуйте позже.",
-            parse_mode="HTML",
-            reply_markup=_get_body_params_keyboard(),
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await _render_placeholder(
+            query,
+            context,
+            (
+                "🔐 <b>Нет активной сессии</b>\n"
+                "Авторизуйтесь через /login, чтобы продолжить."
+            ),
+        )
+        return ConversationHandler.END
+
+    uuid = context.user_data.get("body_params_uuid")
+    message = query.message
+    message_info = context.user_data.get("body_params_message")
+    card_chat_id, card_message_id = (message_info or ((message.chat_id if message else user_id), None))
+
+    if not uuid:
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status="⚠️ Нет сохранённых данных для удаления.",
+            skip_fetch=True,
         )
         return ConversationHandler.END
 
     try:
-        text = await _render_body_params_text(user_id)
-    except aiosqlite.Error as exc:  # noqa: BLE001
-        logger.error(
-            "Ошибка повторного чтения параметров после очистки для пользователя %s: %s",
-            user_id,
-            exc,
+        response = await api_delete_body_params(token, uuid)
+    except httpx.HTTPError as exc:  # noqa: BLE001
+        logger.error("Ошибка HTTP при удалении обмеров: %s", exc)
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status="❌ Не удалось удалить запись. Попробуйте позже.",
+            skip_fetch=True,
         )
-        await query.message.edit_text(
-            "✅ Все параметры очищены.",
-            parse_mode="HTML",
-            reply_markup=_get_body_params_keyboard(),
+        return ConversationHandler.END
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Неожиданная ошибка при удалении обмеров: %s", exc)
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status="❌ Не удалось удалить запись. Попробуйте позже.",
+            skip_fetch=True,
         )
         return ConversationHandler.END
 
-    await query.message.edit_text(
-        "✅ Все параметры очищены.\n\n" + text,
-        parse_mode="HTML",
-        reply_markup=_get_body_params_keyboard(),
+    if response.status_code >= 400:
+        error_text = _extract_error_message(response) or "Не удалось удалить запись."
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status=f"❌ {html.escape(error_text)}",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+
+    # После успешного удаления сбрасываем сохранённые значения
+    context.user_data.pop("body_params_uuid", None)
+    context.user_data["body_params_values"] = {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
+
+    await _refresh_card(
+        context,
+        chat_id=card_chat_id,
+        message_id=card_message_id,
+        token=token,
+        status="✅ Последняя запись удалена.",
     )
+
     return ConversationHandler.END
+
