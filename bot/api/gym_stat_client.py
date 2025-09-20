@@ -102,3 +102,25 @@ async def create_weight_data(token: str, payload: Dict[str, Any]) -> httpx.Respo
     """Создание новой записи о взвешивании пользователя."""
     # Новое взвешивание создаётся по маршруту ``/api/weight-data``.
     return await _request("POST", "/api/weight-data", token=token, json=payload)
+
+
+async def get_body_params(token: str) -> httpx.Response:
+    """Получение текущих параметров обмеров тела пользователя."""
+    return await _request("GET", "/api/body-params", token=token)
+
+
+async def create_body_params(token: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Создание записи с параметрами обмеров тела."""
+    return await _request("POST", "/api/body-params", token=token, json=payload)
+
+
+async def update_body_params(token: str, uuid: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Обновление существующей записи параметров обмеров тела."""
+    endpoint = f"/api/body-params/{uuid}"
+    return await _request("PATCH", endpoint, token=token, json=payload)
+
+
+async def delete_body_params(token: str, uuid: str) -> httpx.Response:
+    """Удаление записи параметров обмеров тела."""
+    endpoint = f"/api/body-params/{uuid}"
+    return await _request("DELETE", endpoint, token=token)

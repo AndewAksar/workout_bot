@@ -45,6 +45,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     chat_id = query.message.chat_id
     logger.info("Пользователь %s запросил профиль", user_id)
 
+    mode = "local"
     try:
         mode = await get_user_mode(user_id)
         if mode == "api":
@@ -52,7 +53,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if not token:
                 await query.message.edit_text(
                     "🔐 Требуется вход. Используйте /login.",
-                    reply_markup=get_settings_menu(),
+                    reply_markup=get_settings_menu(mode=mode),
                 )
                 return
             try:
@@ -61,7 +62,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 logger.error("Ошибка запроса профиля для пользователя %s: %s", user_id, str(e))
                 await query.message.edit_text(
                     "❌ Не удалось получить профиль. Попробуйте позже.",
-                    reply_markup=get_settings_menu(),
+                    reply_markup=get_settings_menu(mode=mode),
                 )
                 return
             if resp.status_code != 200:
@@ -70,7 +71,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 )
                 await query.message.edit_text(
                     "❌ Не удалось получить профиль. Попробуйте позже.",
-                    reply_markup=get_settings_menu(),
+                    reply_markup=get_settings_menu(mode=mode),
                 )
                 return
             try:
@@ -192,7 +193,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await query.message.edit_text(
             greeting,
             parse_mode="HTML",
-            reply_markup=get_settings_menu(),
+            reply_markup=get_settings_menu(mode=mode),
         )
     except BadRequest as e:
         if "Message is not modified" in str(e):
@@ -200,7 +201,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         sent_message = await query.message.reply_text(
             greeting,
             parse_mode="HTML",
-            reply_markup=get_settings_menu(),
+            reply_markup=get_settings_menu(mode=mode),
         )
         schedule_message_deletion(
             context, [sent_message.message_id], chat_id, delay=5
@@ -211,7 +212,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         sent_message = await query.message.reply_text(
             "⚠️ Произошла ошибка. Попробуйте снова.",
-            reply_markup=get_settings_menu(),
+            reply_markup=get_settings_menu(mode=mode),
         )
         schedule_message_deletion(
             context, [sent_message.message_id], chat_id, delay=5

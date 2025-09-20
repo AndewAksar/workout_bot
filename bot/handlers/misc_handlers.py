@@ -153,12 +153,19 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         mode = row[0] if row else 'local'
         mode_text = 'Интеграция с Gym-Stat.ru' if mode == 'api' else 'Telegram-версия'
 
+        api_hint = ""
+        if mode == 'api':
+            api_hint = (
+                "• «📏 Мои параметры» — посмотреть замеры тела, сохранённые в Gym-Stat.\n"
+            )
+
         await query.message.edit_text(
             text=(
                 "⚙️ <b>Настройки</b>\n"
                 f"Текущий режим: <code>{mode_text}</code>\n\n"
                 "• «📋 Личные данные» — обнови имя, возраст, вес, рост и пол.\n"
                 "• «👤 Показать профиль» — просмотр сохранённых сведений.\n"
+                f"{api_hint}"
                 "• «⚖️ Данные взвешивания» — история веса из Gym-Stat.\n"
                 "• «🔙 Назад в главное меню» — вернуться к основным действиям.\n\n"
                 "Если разделы пустые, начни с заполнения личных данных или"
@@ -199,6 +206,8 @@ async def show_personal_data_menu(update: Update, context: ContextTypes.DEFAULT_
             "• «Пол» — нужен для персональных рекомендаций.\n"
             "• «Возраст», «Вес», «Рост» — пригодятся в карточке профиля и"
             " при работе с AI-консультантом.\n"
+            "• «📊 Параметры тела» — быстрый обзор заполненных значений с"
+            " возможностью очистить их.\n"
             "• «🔙 Назад» — вернуться к настройкам."
         ),
         parse_mode="HTML",

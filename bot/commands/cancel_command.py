@@ -47,6 +47,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = update.message.chat_id
     message_id = update.message.message_id
 
+    mode = "local"
     try:
         # Проверяем, есть ли активный диалог
         is_conversation_active = context.user_data.get('conversation_active', False)
@@ -58,7 +59,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if is_conversation_active:
             # В диалоге: отменяем и показываем меню настроек
             message_text = "❌ Действие отменено."
-            reply_markup = get_settings_menu()
+            try:
+                mode = await get_user_mode(user_id)
+            except Exception as mode_error:  # noqa: BLE001
+                logger.error(f"Не удалось определить режим пользователя {user_id}: {mode_error}")
+            reply_markup = get_settings_menu(mode=mode)
             logger.info(f"Пользователь {user_id} отменил активный диалог.")
         else:
             # Вне диалога: уведомляем, что нет активного диалога

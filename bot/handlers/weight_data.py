@@ -233,6 +233,7 @@ async def show_weight_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     logger.info("Пользователь %s запросил данные взвешиваний (страница %s)", user_id, page)
 
+    mode = "local"
     try:
         mode = await get_user_mode(user_id)
     except Exception as exc:  # noqa: BLE001
@@ -240,7 +241,7 @@ async def show_weight_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             await query.message.edit_text(
                 "⚠️ Не удалось определить режим работы. Попробуйте позже.",
-                reply_markup=get_settings_menu(),
+                reply_markup=get_settings_menu(mode=mode),
             )
         except TelegramError as telegram_error:
             logger.error("Ошибка Telegram при отправке сообщения пользователю %s: %s", user_id, telegram_error)
@@ -252,7 +253,7 @@ async def show_weight_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await query.message.edit_text(
                 "ℹ️ История взвешиваний доступна только при подключении к Gym-Stat."
                 " Используйте /login для входа.",
-                reply_markup=get_settings_menu(),
+                reply_markup=get_settings_menu(mode=mode),
             )
         except TelegramError as telegram_error:
             logger.error("Ошибка Telegram при отправке уведомления пользователю %s: %s", user_id, telegram_error)
@@ -264,7 +265,7 @@ async def show_weight_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             await query.message.edit_text(
                 "🔐 Требуется повторный вход. Используйте /login, чтобы продолжить.",
-                reply_markup=get_settings_menu(),
+                reply_markup=get_settings_menu(mode=mode),
             )
         except TelegramError as telegram_error:
             logger.error("Ошибка Telegram при уведомлении пользователя %s о входе: %s", user_id, telegram_error)
@@ -278,7 +279,7 @@ async def show_weight_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             await query.message.edit_text(
                 "❌ Не удалось получить данные взвешиваний. Попробуйте позже.",
-                reply_markup=get_settings_menu(),
+                reply_markup=get_settings_menu(mode=mode),
             )
         except TelegramError as telegram_error:
             logger.error("Ошибка Telegram при уведомлении пользователя %s: %s", user_id, telegram_error)
@@ -295,7 +296,7 @@ async def show_weight_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         try:
             await query.message.edit_text(
                 "❌ Не удалось получить данные взвешиваний. Попробуйте позже.",
-                reply_markup=get_settings_menu(),
+                reply_markup=get_settings_menu(mode=mode),
             )
         except TelegramError as telegram_error:
             logger.error("Ошибка Telegram при отправке сообщения пользователю %s: %s", user_id, telegram_error)

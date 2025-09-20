@@ -15,22 +15,28 @@ from telegram import (
 )
 
 
-def get_settings_menu():
+def get_settings_menu(mode: str = "local"):
     keyboard = [
         [
             InlineKeyboardButton("📋 Личные данные", callback_data='personal_data'),
             InlineKeyboardButton("👤 Показать профиль", callback_data='show_profile')
-        ],
-        [
-            InlineKeyboardButton(
-                "⚖️ Данные взвешивания",
-                callback_data='weight_data_page_1'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🔙 Назад в главное меню", callback_data='main_menu'
-            )
         ]
     ]
+
+    if mode == "api":
+        keyboard.append([
+            InlineKeyboardButton("📏 Мои параметры", callback_data="body_params")
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            "⚖️ Данные взвешивания",
+            callback_data='weight_data_page_1'
+        )
+    ])
+    keyboard.append([
+        InlineKeyboardButton(
+            "🔙 Назад в главное меню", callback_data='main_menu'
+        )
+    ])
     return InlineKeyboardMarkup(keyboard)

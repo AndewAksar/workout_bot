@@ -29,6 +29,12 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         mode = row[0] if row else 'local'
         mode_text = 'Интеграция с Gym-Stat.ru' if mode == 'api' else 'Telegram-версия'
 
+        api_hint = ""
+        if mode == 'api':
+            api_hint = (
+                "• «📏 Мои параметры» — посмотреть последние замеры тела из Gym-Stat.\n"
+            )
+
         await update.message.reply_text(
             (
                 "⚙️ <b>Настройки</b>\n"
@@ -38,6 +44,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 " текстом.\n"
                 "• «👤 Показать профиль» — посмотреть текущие данные. Если"
                 " что-то пусто, заполните раздел «Личные данные».\n"
+                f"{api_hint}"
                 "• «⚖️ Данные взвешивания» — история веса (активна после входа"
                 " в Gym-Stat).\n"
                 "• «🔙 Назад в главное меню» — вернуться к основным кнопкам.\n\n"
@@ -45,7 +52,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 " или используйте кнопку «Войти» в режиме Gym-Stat.</i>"
             ),
             parse_mode="HTML",
-            reply_markup=get_settings_menu()
+            reply_markup=get_settings_menu(mode=mode)
         )
 
         # Планируем удаление только сообщения с командой /settings

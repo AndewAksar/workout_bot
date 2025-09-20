@@ -27,6 +27,9 @@ def get_personal_data_menu():
         ],
         [
             InlineKeyboardButton(
+                "📊 Параметры тела", callback_data='body_params'
+            ),
+            InlineKeyboardButton(
                 "🔙 Назад", callback_data='settings'
             )
         ],

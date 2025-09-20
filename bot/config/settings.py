@@ -64,12 +64,12 @@ str: Путь к файлу базы данных, используемой бо
 
 # Определение состояний для ConversationHandler.
 # Используется для управления диалогами при вводе данных пользователем.
-SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER, AI_CONSULTATION = range(6)
+SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER, AI_CONSULTATION, SET_BODY_PARAM = range(7)
 """
-Константы: SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER, AI_CONSULTATION
+Константы: SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER, AI_CONSULTATION, SET_BODY_PARAM
 Описание: Состояния ConversationHandler для обработки ввода имени, возраста, веса,
-роста и пола пользователя.
-Значения: Целые числа от 0 до 5, представляющие этапы диалога.
+роста, пола пользователя и параметров обмеров тела.
+Значения: Целые числа от 0 до 6, представляющие этапы диалога.
 """
 
 # Список допустимых команд бота.

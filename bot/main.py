@@ -54,7 +54,14 @@ from bot.handlers.misc_handlers import (
     show_training_settings,
     return_to_main_menu
 )
+from bot.handlers.body_params import show_body_params
 from bot.handlers.weight_data import show_weight_data
+from bot.handlers.body_params import (
+    show_body_params,
+    prompt_body_param,
+    handle_body_param_input,
+    delete_body_params,
+)
 from handlers.set_age import set_age
 from handlers.set_weight import set_weight
 from handlers.set_height import set_height
@@ -65,7 +72,8 @@ from bot.config.settings import (
     SET_AGE,
     SET_WEIGHT,
     SET_HEIGHT,
-    SET_GENDER
+    SET_GENDER,
+    SET_BODY_PARAM,
 )
 from bot.ai_assistant.ai_handler import (
     choose_ai_model,
@@ -131,6 +139,7 @@ def main() -> None:
             CallbackQueryHandler(start_chatgpt_assistant, pattern='^start_chatgpt$'),
             CallbackQueryHandler(start_gigachat_assistant, pattern='^start_gigachat$'),
             CallbackQueryHandler(show_settings, pattern='^settings$'),
+            CallbackQueryHandler(show_body_params, pattern='^body_params$'),
             CallbackQueryHandler(show_personal_data_menu, pattern='^personal_data$'),
             CallbackQueryHandler(show_training_settings, pattern='^training_settings$'),
             CallbackQueryHandler(return_to_main_menu, pattern='^main_menu$'),
@@ -140,6 +149,8 @@ def main() -> None:
             CallbackQueryHandler(set_weight_callback, pattern='^set_weight$'),
             CallbackQueryHandler(set_height_callback, pattern='^set_height$'),
             CallbackQueryHandler(set_gender_callback, pattern='^set_gender$'),
+            CallbackQueryHandler(prompt_body_param, pattern='^body_param_set_[a-z_]+$'),
+            CallbackQueryHandler(delete_body_params, pattern='^body_param_delete_all$'),
         ],
         states={
             SET_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)],
@@ -147,6 +158,7 @@ def main() -> None:
             SET_WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_weight)],
             SET_HEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_height)],
             SET_GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_gender)],
+            SET_BODY_PARAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_body_param_input)],
             AI_CONSULTATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
                 CallbackQueryHandler(end_ai_consultation, pattern='^end_ai_consultation$'),
