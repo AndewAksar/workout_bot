@@ -236,12 +236,12 @@ async def set_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         async with aiosqlite.connect(DB_PATH) as db:
             await _init_table_if_required(db)
-        await _ensure_user_row(db, user_id)
-        await db.execute(
-            "UPDATE UserSettings SET weight = ? WHERE user_id = ?",
-            (weight, user_id),
-        )
-        await db.commit()
+            await _ensure_user_row(db, user_id)
+            await db.execute(
+                "UPDATE UserSettings SET weight = ? WHERE user_id = ?",
+                (weight, user_id),
+            )
+            await db.commit()
     except aiosqlite.Error as exc:
         logger.error(
             "Ошибка базы данных для пользователя %s: %s",
