@@ -53,9 +53,13 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.message.from_user.id
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
-    age = int(update.message.text.strip())
+    raw_value = update.message.text.strip()
 
-    logger.info(f"Начало обработки ввода имени для пользователя {user_id}: {age}")
+    logger.info(
+        "Начало обработки ввода возраста для пользователя %s: %s",
+        user_id,
+        raw_value,
+    )
 
     # Проверяем, что бот находится в состоянии SET_AGE
     if context.user_data.get('current_state') != 'SET_AGE':
@@ -67,6 +71,7 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     try:
+        age = int(raw_value)
         if age < 0 or age > 150:
             raise ValueError("Некорректный возраст")
         async with aiosqlite.connect(DB_PATH) as db:
@@ -76,7 +81,13 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             )
             await db.commit()
         await update.message.reply_text(
-            f"✅ Возраст обновлен: {age}",
+            (
+                f"✅ Возраст обновлён: <b>{age}</b> лет.\n"
+                "Это значение используется в профиле и подсказках AI."
+                " Загляните в «👤 Показать профиль», чтобы убедиться, что"
+                " данные обновились."
+            ),
+            parse_mode="HTML",
             reply_markup=get_personal_data_menu()
         )
         logger.info(f"Сообщение об успешном обновлении возраста отправлено пользователю {user_id}")
@@ -87,9 +98,19 @@ async def set_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             delay=5
         )
     except ValueError:
-        await update.message.reply_text(
-            "⚠️ Пожалуйста, введите корректное число для возраста.",
+        error_message = await update.message.reply_text(
+            (
+                "⚠️ Некорректный ввод. Укажите целое число от 0 до 150."
+                " Пример: <code>29</code>."
+            ),
+            parse_mode="HTML",
             reply_markup=get_personal_data_menu()
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, error_message.message_id],
+            chat_id,
+            delay=5
         )
 
     context.user_data.pop('current_state', None)

@@ -69,7 +69,13 @@ async def select_mode_local(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ]
     ]
     await query.message.edit_text(
-        "Переключиться на Telegram-версию? Все данные будут храниться локально.",
+        (
+            "📱 <b>Переключиться на Telegram-версию?</b>\n"
+            "• Данные (имя, возраст, вес) хранятся только в боте.\n"
+            "• История взвешиваний и тренировки ведутся вручную.\n"
+            "• Можно вернуться в Gym-Stat позже через «🔄 Сменить режим»."
+        ),
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -103,7 +109,13 @@ async def select_mode_api(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         ]
     ]
     await query.message.edit_text(
-        "Переключиться на интеграцию с Gym-Stat.ru? Для работы потребуется авторизация.",
+        (
+            "🌐 <b>Перейти на интеграцию с Gym-Stat.ru?</b>\n"
+            "• Понадобится зарегистрироваться или войти в аккаунт.\n"
+            "• Профиль и вес синхронизируются с сайтом.\n"
+            "• При недоступности сервиса можно вернуться в локальный режим."
+        ),
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -113,11 +125,14 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     text = (
-        "📱 Telegram-версия: Данные хранятся только в боте. Подходит для простого использования.\n"
-        "🌐 Интеграция с Gym-Stat.ru: Синхронизация с сайтом, доступ к веб-кабинету. Требуется регистрация.\n"
-        "Выберите режим или используйте /settings для смены."
+        "📱 <b>Telegram-версия</b> — сохраняет данные локально, подходит для"
+        " быстрых заметок без регистрации.\n"
+        "🌐 <b>Gym-Stat</b> — синхронизация с сайтом, доступ к веб-кабинету и"
+        " истории веса. Понадобится логин/пароль.\n\n"
+        "Нажмите кнопку ниже, чтобы выбрать режим, или /settings для смены"
+        " в любой момент."
     )
-    await query.message.edit_text(text, reply_markup=get_mode_selection_keyboard())
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=get_mode_selection_keyboard())
 
 
 async def switch_mode_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -126,11 +141,21 @@ async def switch_mode_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query = update.callback_query
         await query.answer()
         await query.message.edit_text(
-            "Выберите режим работы:", reply_markup=get_mode_selection_keyboard()
+            (
+                "Выберите режим работы:\n"
+                "• Если хотите вести заметки локально — выберите Telegram-версию.\n"
+                "• Для синхронизации с сайтом и истории веса — режим Gym-Stat."
+            ),
+            reply_markup=get_mode_selection_keyboard()
         )
     else:
         await update.message.reply_text(
-            "Выберите режим работы:", reply_markup=get_mode_selection_keyboard()
+            (
+                "Выберите режим работы:\n"
+                "• Telegram-версия — данные только в этом чате.\n"
+                "• Gym-Stat — нужны логин и пароль для синхронизации."
+            ),
+            reply_markup=get_mode_selection_keyboard()
         )
 
 async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -147,19 +172,34 @@ async def confirm_switch_mode(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             await _update_user_mode(user_id, "local")
             await query.message.edit_text(
-                "⚠️ Сайт Gym-Stat.ru недоступен. Остаёмся в Telegram-версии.",
+                (
+                    "⚠️ Сайт Gym-Stat.ru сейчас недоступен."
+                    " Вы продолжите работу в Telegram-версии — все текущие"
+                    " данные сохранены локально. Попробуйте переключиться"
+                    " позже через «🔄 Сменить режим»."
+                ),
+                parse_mode="HTML",
                 reply_markup=get_main_menu(),
             )
             return
         await _update_user_mode(user_id, "api")
         await query.message.edit_text(
-            "Режим изменен на интеграцию с Gym-Stat.ru. Выберите действие:",
+            (
+                "Режим изменён на интеграцию с Gym-Stat.ru.\n"
+                "Сначала выполните вход или регистрацию, чтобы загрузить"
+                " профиль и историю веса."
+            ),
             reply_markup=get_api_auth_keyboard(),
         )
     else:
         await _update_user_mode(user_id, "local")
         await query.message.edit_text(
-            "Режим изменен на Telegram-версию.", reply_markup=get_main_menu()
+            (
+                "Режим изменён на Telegram-версию.\n"
+                "Можно продолжать вести заметки локально и при необходимости"
+                " снова подключить Gym-Stat через «🔄 Сменить режим»."
+            ),
+            reply_markup=get_main_menu()
         )
 
 
@@ -168,6 +208,10 @@ async def cancel_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     query = update.callback_query
     await query.answer()
     await query.message.edit_text(
-        "Выбор режима отменён. Выберите режим:",
+        (
+            "Выбор режима отменён.\n"
+            "Можете остаться в текущем режиме или выбрать другой позже через"
+            " «🔄 Сменить режим»."
+        ),
         reply_markup=get_mode_selection_keyboard(),
     )
