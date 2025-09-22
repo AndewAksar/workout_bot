@@ -172,7 +172,7 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 " авторизуйся через /login для синхронизации с сайтом."
             ),
             parse_mode="HTML",
-            reply_markup=get_settings_menu()
+            reply_markup=get_settings_menu(mode=mode)
         )
     except Exception as e:
         logger.error(f"Ошибка в show_settings для пользователя {user_id}: {e}")

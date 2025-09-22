@@ -59,6 +59,8 @@ from bot.handlers.body_params import (
     show_body_params,
     prompt_body_param,
     handle_body_param_input,
+    cancel_body_param_input,
+    save_body_params,
     delete_body_params,
 )
 from handlers.set_age import set_age
@@ -150,8 +152,9 @@ def main() -> None:
             CallbackQueryHandler(set_gender_callback, pattern='^set_gender$'),
             CallbackQueryHandler(
                 prompt_body_param,
-                pattern='^body_param_(date|neck|chest|waist|hips|thigh|calf|forearm|wrist)$'
+                pattern='^body_param_(date|neck|waist|hips|thigh|calf|forearm|wrist)$'
             ),
+            CallbackQueryHandler(save_body_params, pattern='^body_params_save$'),
             CallbackQueryHandler(delete_body_params, pattern='^delete_body_params$'),
         ],
         states={
@@ -160,7 +163,10 @@ def main() -> None:
             SET_WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_weight)],
             SET_HEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_height)],
             SET_GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_gender)],
-            SET_BODY_PARAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_body_param_input)],
+            SET_BODY_PARAM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_body_param_input),
+                CommandHandler("cancel", cancel_body_param_input),
+            ],
             AI_CONSULTATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
                 CallbackQueryHandler(end_ai_consultation, pattern='^end_ai_consultation$'),

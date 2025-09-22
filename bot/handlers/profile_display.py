@@ -80,7 +80,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 logger.error("Некорректный ответ профиля для пользователя %s: %s", user_id, str(e))
                 await query.message.edit_text(
                     "❌ Не удалось получить профиль. Попробуйте позже.",
-                    reply_markup=get_settings_menu(),
+                    reply_markup=get_settings_menu(mode=mode),
                 )
                 return
             birth_date_raw = data.get("birthDate")

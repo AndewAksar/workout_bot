@@ -9,7 +9,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 BODY_PARAM_BUTTONS: list[tuple[str, str]] = [
     ("Дата", "body_param_date"),
     ("Шея", "body_param_neck"),
-    ("Грудь", "body_param_chest"),
     ("Талия", "body_param_waist"),
     ("Бёдра", "body_param_hips"),
     ("Бедро", "body_param_thigh"),
@@ -19,7 +18,7 @@ BODY_PARAM_BUTTONS: list[tuple[str, str]] = [
 ]
 
 
-def get_body_params_menu(has_data: bool = False) -> InlineKeyboardMarkup:
+def get_body_params_menu(has_data: bool = False, *, can_save: bool = False) -> InlineKeyboardMarkup:
     """Возвращает клавиатуру с параметрами тела."""
 
     keyboard: list[list[InlineKeyboardButton]] = []
@@ -29,6 +28,11 @@ def get_body_params_menu(has_data: bool = False) -> InlineKeyboardMarkup:
         for title, callback_data in BODY_PARAM_BUTTONS[i : i + 3]:
             row_buttons.append(InlineKeyboardButton(title, callback_data=callback_data))
         keyboard.append(row_buttons)
+
+    if can_save:
+        keyboard.append([
+            InlineKeyboardButton("💾 Сохранить замеры", callback_data="body_params_save")
+        ])
 
     if has_data:
         keyboard.append([
@@ -40,4 +44,3 @@ def get_body_params_menu(has_data: bool = False) -> InlineKeyboardMarkup:
     ])
 
     return InlineKeyboardMarkup(keyboard)
-
