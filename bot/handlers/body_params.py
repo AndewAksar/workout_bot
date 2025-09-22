@@ -848,6 +848,163 @@ async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return ConversationHandler.END
 
 
+async def cancel_body_param_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет ввод параметра и возвращает карточку обмеров."""
+
+    message = update.message
+    if message is None:
+        return ConversationHandler.END
+
+    chat_id = message.chat_id
+    user_id = message.from_user.id
+
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+
+    context.user_data.pop("pending_body_param", None)
+    context.user_data.pop("current_state", None)
+    context.user_data["conversation_active"] = False
+
+    message_info = context.user_data.get("body_params_message")
+    card_chat_id, card_message_id = (message_info or (chat_id, None))
+
+    token = await get_valid_access_token(user_id)
+    await _refresh_card(
+        context,
+        chat_id=card_chat_id,
+        message_id=card_message_id,
+        token=token,
+        status="ℹ️ Ввод отменён.",
+        skip_fetch=True,
+    )
+
+    return ConversationHandler.END
+
+
+async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Сохраняет черновик обмеров через API Gym-Stat."""
+
+    query = update.callback_query
+    if not query:
+        logger.warning("save_body_params вызван без callback_query")
+        return ConversationHandler.END
+
+    await query.answer()
+    user_id = query.from_user.id
+
+    context.user_data.pop("pending_body_param", None)
+    context.user_data.pop("current_state", None)
+    context.user_data["conversation_active"] = False
+
+    message = query.message
+    message_info = context.user_data.get("body_params_message")
+    card_chat_id, card_message_id = (message_info or ((message.chat_id if message else user_id), None))
+
+    draft = context.user_data.get("body_params_draft")
+    dirty = context.user_data.get("body_params_dirty", False)
+
+    if not dirty or not isinstance(draft, dict):
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=None,
+            status="⚠️ Нет изменений для сохранения.",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=None,
+            status="🌐 Сохранение доступно только после подключения Gym-Stat.",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=None,
+            status="🔐 Войдите через /login, чтобы отправить замеры.",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+
+    payload: dict[str, Any] = {}
+
+    normalized_date = _normalize_date_value(draft.get("date")) if draft.get("date") else None
+    if normalized_date:
+        payload["date"] = normalized_date
+    else:
+        payload["date"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+    for key in MEASUREMENT_KEYS:
+        value = draft.get(key)
+        if value not in (None, ""):
+            payload[key] = value
+
+    try:
+        response = await api_create_body_params(token, payload)
+    except httpx.HTTPError as exc:  # noqa: BLE001
+        logger.error("Ошибка HTTP при создании обмеров: %s", exc)
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status="❌ Не удалось сохранить замеры. Попробуйте позже.",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Неожиданная ошибка при создании обмеров: %s", exc)
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status="❌ Не удалось сохранить замеры. Попробуйте позже.",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+
+    if response.status_code >= 400:
+        error_text = _extract_error_message(response) or "Не удалось сохранить замеры."
+        await _refresh_card(
+            context,
+            chat_id=card_chat_id,
+            message_id=card_message_id,
+            token=token,
+            status=f"❌ {html.escape(error_text)}",
+            skip_fetch=True,
+        )
+        return ConversationHandler.END
+
+    _, load_error = await _load_and_store(context, token)
+    if load_error:
+        status_text = f"✅ Замеры сохранены, но не удалось обновить данные: {html.escape(load_error)}"
+    else:
+        status_text = "✅ Замеры сохранены и синхронизированы с Gym-Stat."
+
+    await _refresh_card(
+        context,
+        chat_id=card_chat_id,
+        message_id=card_message_id,
+        token=token,
+        status=status_text,
+        skip_fetch=True,
+    )
+
+    return ConversationHandler.END
+
+
 async def delete_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Удаляет текущую запись обмеров пользователя."""
 
