@@ -33,6 +33,7 @@ DATE_INPUT_PATTERN = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d
 FIELD_TITLES = {
     "date": "Дата замеров",
     "neck": "Шея",
+    "chest": "Грудь",
     "waist": "Талия",
     "hips": "Бёдра",
     "thigh": "Бедро",
@@ -43,6 +44,7 @@ FIELD_TITLES = {
 
 MEASUREMENT_KEYS = [
     "neck",
+    "chest",
     "waist",
     "hips",
     "thigh",
@@ -52,28 +54,6 @@ MEASUREMENT_KEYS = [
 ]
 
 CARD_ORDER = ["date", *MEASUREMENT_KEYS]
-
-
-def _empty_values() -> dict[str, Any]:
-    """Возвращает словарь со всеми ключами окружностей, заполненный значениями None."""
-
-    return {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
-
-
-def _draft_ready_for_save(draft: dict[str, Any] | None) -> bool:
-    """Проверяет, достаточно ли данных в черновике для отправки на сервер."""
-
-    if not isinstance(draft, dict):
-        return False
-
-    date = draft.get("date")
-    if not date:
-        return False
-
-    has_measurements = any(
-        draft.get(key) not in (None, "") for key in MEASUREMENT_KEYS
-    )
-    return has_measurements
 
 
 def _normalize_entries(payload: Any) -> list[dict[str, Any]]:
@@ -164,39 +144,6 @@ def _normalize_date_value(value: Any) -> str | None:
     return None
 
 
-def _normalize_date_to_datetime_utc(value: Any) -> str | None:
-    """Преобразует дату в ISO-8601 datetime с таймзоной UTC."""
-
-    if not value:
-        return None
-
-    if isinstance(value, datetime):
-        dt = value
-    elif isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        if DATE_INPUT_PATTERN.match(text):
-            dt = datetime.strptime(text, "%d.%m.%Y")
-        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-            dt = datetime.strptime(text, "%Y-%m-%d")
-        else:
-            normalized = text.replace("Z", "+00:00")
-            try:
-                dt = datetime.fromisoformat(normalized)
-            except ValueError:
-                return None
-    else:
-        return None
-
-    if dt.tzinfo is None:
-        dt_utc = dt.replace(tzinfo=timezone.utc)
-    else:
-        dt_utc = dt.astimezone(timezone.utc)
-
-    return dt_utc.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
 def _format_date_for_display(value: Any) -> str | None:
     """Форматирует дату для отображения пользователю."""
 
@@ -266,8 +213,9 @@ def _build_card_text(values: dict[str, Any] | None, status: str | None = None) -
 def _store_entry(context: ContextTypes.DEFAULT_TYPE, entry: dict[str, Any] | None) -> dict[str, Any]:
     """Сохраняет текущие значения обмеров в контексте пользователя."""
 
-    values = _empty_values()
-    raw_values = _empty_values()
+    values: dict[str, Any] = {"date": None}
+    for key in MEASUREMENT_KEYS:
+        values[key] = None
 
     if entry:
         uuid = entry.get("uuid") or entry.get("id")
@@ -275,35 +223,21 @@ def _store_entry(context: ContextTypes.DEFAULT_TYPE, entry: dict[str, Any] | Non
             context.user_data["body_params_uuid"] = uuid
         else:
             context.user_data.pop("body_params_uuid", None)
-        raw_date_source=(
+        iso_date = _normalize_date_value(
             entry.get("date")
             or entry.get("measurementDate")
             or entry.get("measurement_date")
             or entry.get("createdAt")
             or entry.get("created_at")
         )
-        raw_iso_date = _normalize_date_to_datetime_utc(raw_date_source)
-        if not raw_iso_date:
-            raw_iso_date = _normalize_date_to_datetime_utc(
-                _normalize_date_value(raw_date_source)
-            )
-        if raw_iso_date:
-            raw_values["date"] = raw_iso_date
-            display_iso_date = _normalize_date_value(raw_iso_date)
-            if display_iso_date:
-                values["date"] = display_iso_date
+        if iso_date:
+            values["date"] = iso_date
         for key in MEASUREMENT_KEYS:
-            normalized_value = _normalize_mm_value(entry.get(key))
-            values[key] = normalized_value
-            raw_values[key] = normalized_value
+            values[key] = _normalize_mm_value(entry.get(key))
     else:
         context.user_data.pop("body_params_uuid", None)
 
     context.user_data["body_params_values"] = values
-    context.user_data["body_params_draft"] = {**values}
-    context.user_data["body_params_values_raw"] = raw_values
-    context.user_data["body_params_draft_raw"] = {**raw_values}
-    context.user_data["body_params_dirty"] = False
     return values
 
 
@@ -372,13 +306,8 @@ async def _load_and_store(context: ContextTypes.DEFAULT_TYPE, token: str) -> tup
         values = _store_entry(context, entry)
     else:
         context.user_data.pop("body_params_uuid", None)
-        values = _empty_values()
-        context.user_data["body_params_values"] = values
-        context.user_data["body_params_draft"] = {**values}
-        empty_raw = _empty_values()
-        context.user_data["body_params_values_raw"] = empty_raw
-        context.user_data["body_params_draft_raw"] = {**empty_raw}
-        context.user_data["body_params_dirty"] = False
+        context.user_data["body_params_values"] = {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
+        values = context.user_data["body_params_values"]
     return values, error
 
 
@@ -394,33 +323,20 @@ async def _refresh_card(
     """Перерисовывает карточку с обмерами."""
 
     values: dict[str, Any] | None = None
+    has_data = False
     status_message = status
-    dirty = bool(context.user_data.get("body_params_dirty"))
-    has_saved_data = bool(context.user_data.get("body_params_uuid"))
 
-    if not skip_fetch and token and not dirty:
+    if not skip_fetch and token:
         values, error = await _load_and_store(context, token)
         if error and not status_message:
             status_message = f"❌ {html.escape(error)}"
-        has_saved_data = bool(context.user_data.get("body_params_uuid"))
+        has_data = bool(context.user_data.get("body_params_uuid"))
     else:
-        values = context.user_data.get("body_params_draft") or context.user_data.get("body_params_values")
-
-    if values is None:
-        values = _empty_values()
-
-    if dirty:
-        unsaved_hint = "💾 Черновик не сохранён."
-        if status_message:
-            if unsaved_hint not in status_message:
-                status_message = f"{status_message}\n{unsaved_hint}"
-        else:
-            status_message = unsaved_hint
-
-    can_save = dirty and _draft_ready_for_save(context.user_data.get("body_params_draft"))
+        values = context.user_data.get("body_params_values")
+        has_data = bool(context.user_data.get("body_params_uuid"))
 
     text = _build_card_text(values, status=status_message)
-    keyboard = get_body_params_menu(has_data=has_saved_data, can_save=can_save)
+    keyboard = get_body_params_menu(has_data=has_data)
 
     if message_id is not None:
         try:
@@ -451,13 +367,7 @@ async def _render_placeholder(
     """Отображает заглушку и сбрасывает сохранённые данные."""
 
     context.user_data.pop("body_params_uuid", None)
-    empty_values = _empty_values()
-    context.user_data["body_params_values"] = empty_values
-    context.user_data["body_params_draft"] = {**empty_values}
-    empty_raw = _empty_values()
-    context.user_data["body_params_values_raw"] = empty_raw
-    context.user_data["body_params_draft_raw"] = {**empty_raw}
-    context.user_data["body_params_dirty"] = False
+    context.user_data["body_params_values"] = {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
 
     message = getattr(query, "message", None)
     if not message:
@@ -514,17 +424,15 @@ async def show_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     status = f"❌ {html.escape(error)}" if error else None
 
     message = query.message
-    chat_id = message.chat_id if message else query.from_user.id
-    message_id = message.message_id if message else None
+    if not message:
+        return ConversationHandler.END
 
-    await _refresh_card(
-        context,
-        chat_id=chat_id,
-        message_id=message_id,
-        token=None,
-        status=status,
-        skip_fetch=True,
+    await message.edit_text(
+        _build_card_text(values, status=status),
+        parse_mode="HTML",
+        reply_markup=get_body_params_menu(has_data=bool(context.user_data.get("body_params_uuid"))),
     )
+    context.user_data["body_params_message"] = (message.chat_id, message.message_id)
     return ConversationHandler.END
 
 
@@ -572,7 +480,7 @@ async def prompt_body_param(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return ConversationHandler.END
 
-    values = context.user_data.get("body_params_draft") or context.user_data.get("body_params_values", {})
+    values = context.user_data.get("body_params_values", {})
 
     prompt_lines: list[str] = []
     if param_key == "date":
@@ -580,9 +488,7 @@ async def prompt_body_param(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         current_date = _format_date_for_display(values.get("date"))
         if current_date:
             prompt_lines.append(f"Текущее значение: <code>{current_date}</code>")
-        prompt_lines.append(
-            "Формат: <code>ДД.ММ.ГГГГ</code> или <code>YYYY-MM-DD</code>."
-        )
+        prompt_lines.append("Формат: <code>ДД.ММ.ГГГГ</code>.")
         prompt_lines.append("/cancel — отменить ввод.")
     else:
         title = FIELD_TITLES[param_key]
@@ -647,6 +553,22 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
         context.user_data.pop("current_state", None)
         return ConversationHandler.END
 
+    token = await get_valid_access_token(user_id)
+    if not token:
+        warning = await message.reply_text(
+            "🔐 Для сохранения замеров войдите через /login."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning.message_id],
+            chat_id,
+            delay=10,
+        )
+        context.user_data["conversation_active"] = False
+        context.user_data.pop("pending_body_param", None)
+        context.user_data.pop("current_state", None)
+        return ConversationHandler.END
+
     message_info = context.user_data.get("body_params_message")
     card_chat_id, card_message_id = (message_info or (chat_id, None))
 
@@ -664,7 +586,7 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
             context,
             chat_id=card_chat_id,
             message_id=card_message_id,
-            token=None,
+            token=token,
             status=status,
             skip_fetch=True,
         )
@@ -674,20 +596,13 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     if param_key == "date":
-        iso_datetime_value = _normalize_date_to_datetime_utc(raw_text)
-        if not iso_datetime_value:
+        if not DATE_INPUT_PATTERN.match(raw_text):
             return await _abort_with_error(
-                "⚠️ Введите дату в формате ДД.ММ.ГГГГ или YYYY-MM-DD.",
+                "⚠️ Введите дату в формате ДД.ММ.ГГГГ.",
                 "⚠️ Неверный формат даты. Попробуйте ещё раз.",
             )
-        display_iso_value = _normalize_date_value(iso_datetime_value)
-        if not display_iso_value:
-            return await _abort_with_error(
-                "⚠️ Не удалось преобразовать дату. Повторите ввод.",
-                "⚠️ Неверный формат даты. Попробуйте ещё раз.",
-            )
-        payload_value = display_iso_value
-        raw_payload_value: Any = iso_datetime_value
+        dt = datetime.strptime(raw_text, "%d.%m.%Y")
+        payload_value: Any = dt.date().isoformat()
     else:
         normalized = raw_text.replace(",", ".")
         try:
@@ -703,289 +618,60 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
                 "⚠️ Значение вне допустимого диапазона.",
             )
         payload_value = int(round(value)) if abs(value - round(value)) < 1e-4 else round(value, 1)
-        raw_payload_value = payload_value
 
-    draft = context.user_data.get("body_params_draft")
-    if not isinstance(draft, dict):
-        base = context.user_data.get("body_params_values")
-        draft = {**base} if isinstance(base, dict) else _empty_values()
+    payload = {param_key: payload_value}
+    existing_values = context.user_data.get("body_params_values", {})
+    uuid = context.user_data.get("body_params_uuid")
 
-    updated_draft = {**draft, param_key: payload_value}
-    context.user_data["body_params_draft"] = updated_draft
-
-    draft_raw = context.user_data.get("body_params_draft_raw")
-    if not isinstance(draft_raw, dict):
-        base_raw = context.user_data.get("body_params_values_raw")
-        draft_raw = {**base_raw} if isinstance(base_raw, dict) else _empty_values()
-
-    updated_draft_raw = {**draft_raw, param_key: raw_payload_value}
-    context.user_data["body_params_draft_raw"] = updated_draft_raw
-
-    saved_values = context.user_data.get("body_params_values")
-    is_dirty = True
-    if isinstance(saved_values, dict):
-        is_dirty = any(
-            saved_values.get(field) != updated_draft.get(field)
-            for field in CARD_ORDER
+    try:
+        if uuid:
+            response = await api_update_body_params(token, uuid, payload)
+        else:
+            create_payload = {
+                field: existing_values.get(field)
+                for field in CARD_ORDER
+                if existing_values.get(field) not in (None, "")
+            }
+            create_payload.update(payload)
+            response = await api_create_body_params(token, create_payload)
+    except httpx.HTTPError as exc:  # noqa: BLE001
+        logger.error("Ошибка HTTP при сохранении обмеров: %s", exc)
+        return await _abort_with_error(
+            "❌ Не удалось отправить данные. Попробуйте позже.",
+            "❌ Не удалось сохранить значение. Попробуйте позже.",
         )
-    context.user_data["body_params_dirty"] = is_dirty
-
-    if not is_dirty:
-        status_message = "ℹ️ Изменений нет — значения совпадают с сохранёнными."
-    else:
-        status_message = (
-            "✏️ Дата замеров обновлена в черновике."
-            if param_key == "date"
-            else f"✏️ «{FIELD_TITLES[param_key]}» обновлено в черновике."
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Неожиданная ошибка при сохранении обмеров: %s", exc)
+        return await _abort_with_error(
+            "❌ Произошла ошибка при сохранении параметров.",
+            "❌ Не удалось сохранить значение. Попробуйте позже.",
         )
+
+    if response.status_code >= 400:
+        error_text = _extract_error_message(response) or "Не удалось сохранить параметр."
+        return await _abort_with_error(
+            f"⚠️ {error_text}",
+            f"❌ {html.escape(error_text)}",
+        )
+
+    status_message = (
+        "✅ Дата замеров обновлена."
+        if param_key == "date"
+        else f"✅ Значение «{FIELD_TITLES[param_key]}» сохранено."
+    )
 
     await _refresh_card(
         context,
         chat_id=card_chat_id,
         message_id=card_message_id,
-        token=None,
+        token=token,
         status=status_message,
-        skip_fetch=True,
     )
 
     schedule_message_deletion(context, [user_message_id], chat_id, delay=5)
     context.user_data["conversation_active"] = False
     context.user_data.pop("pending_body_param", None)
     context.user_data.pop("current_state", None)
-    return ConversationHandler.END
-
-
-async def cancel_body_param_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Отменяет ввод параметра тела, сохраняя черновик."""
-
-    message = update.message
-    if message is None:
-        return ConversationHandler.END
-
-    chat_id = message.chat_id
-    message_id = message.message_id
-
-    message_info = context.user_data.get("body_params_message")
-    card_chat_id, card_message_id = message_info or (chat_id, None)
-
-    await _refresh_card(
-        context,
-        chat_id=card_chat_id,
-        message_id=card_message_id,
-        token=None,
-        status="ℹ️ Ввод отменён.",
-        skip_fetch=True,
-    )
-
-    schedule_message_deletion(context, [message_id], chat_id, delay=5)
-    context.user_data["conversation_active"] = False
-    context.user_data.pop("pending_body_param", None)
-    context.user_data.pop("current_state", None)
-    return ConversationHandler.END
-
-
-async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Сохраняет черновик замеров тела в Gym-Stat."""
-
-    query = update.callback_query
-    if not query:
-        logger.warning("save_body_params вызван без callback_query")
-        return ConversationHandler.END
-
-    await query.answer()
-    user_id = query.from_user.id
-
-    context.user_data.pop("pending_body_param", None)
-    context.user_data.pop("current_state", None)
-    context.user_data["conversation_active"] = False
-
-    draft = context.user_data.get("body_params_draft")
-    draft_raw = context.user_data.get("body_params_draft_raw")
-    dirty = bool(context.user_data.get("body_params_dirty"))
-
-    message = query.message
-    message_info = context.user_data.get("body_params_message")
-    card_chat_id, card_message_id = (
-        message_info
-        or ((message.chat_id if message else user_id), None)
-    )
-
-    if not dirty:
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="ℹ️ Нет изменений для сохранения.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    if not _draft_ready_for_save(draft):
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="⚠️ Укажите дату и хотя бы одну окружность, чтобы сохранить запись.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    mode = await get_user_mode(user_id)
-    if mode != "api":
-        await _render_placeholder(
-            query,
-            context,
-            (
-                "🌐 <b>Только для режима Gym-Stat</b>\n"
-                "Переключитесь на интеграцию, чтобы сохранить измерения."
-            ),
-        )
-        return ConversationHandler.END
-
-    token = await get_valid_access_token(user_id)
-    if not token:
-        await _render_placeholder(
-            query,
-            context,
-            (
-                "🔐 <b>Нет активной сессии</b>\n"
-                "Авторизуйтесь через /login, чтобы продолжить."
-            ),
-        )
-        return ConversationHandler.END
-
-    if isinstance(draft, dict):
-        draft_values = draft
-    else:
-        draft_values = _empty_values()
-
-    if isinstance(draft_raw, dict):
-        draft_raw_values = draft_raw
-    else:
-        base_raw = context.user_data.get("body_params_values_raw")
-        draft_raw_values = (
-            {**base_raw} if isinstance(base_raw, dict) else _empty_values()
-        )
-
-    existing_values = context.user_data.get("body_params_values")
-    if not isinstance(existing_values, dict):
-        existing_values = {}
-
-    existing_values_raw = context.user_data.get("body_params_values_raw")
-    if not isinstance(existing_values_raw, dict):
-        existing_values_raw = {}
-
-    payload: dict[str, Any] = {}
-    for field in CARD_ORDER:
-        value = draft_raw_values.get(field)
-        if value not in (None, ""):
-            payload[field] = value
-
-    uuid = context.user_data.get("body_params_uuid")
-    is_update = bool(uuid)
-
-    if not is_update and "date" not in payload:
-        existing_date = existing_values_raw.get("date") or existing_values.get("date")
-        normalized_existing_date = _normalize_date_to_datetime_utc(existing_date)
-        if normalized_existing_date:
-            payload["date"] = normalized_existing_date
-    try:
-        if uuid:
-            response = await api_update_body_params(token, uuid, payload)
-        else:
-            response = await api_create_body_params(token, payload)
-    except httpx.HTTPError as exc:  # noqa: BLE001
-        logger.error("Ошибка HTTP при сохранении обмеров: %s", exc)
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="❌ Не удалось отправить данные. Попробуйте позже.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Неожиданная ошибка при сохранении обмеров: %s", exc)
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="❌ Произошла ошибка при сохранении параметров.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    if response.status_code >= 400:
-        error_text = _extract_error_message(response) or "Не удалось сохранить запись."
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status=f"❌ {html.escape(error_text)}",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    new_entry: dict[str, Any] | None = None
-    try:
-        payload_data = response.json()
-    except ValueError:
-        payload_data = None
-
-    if payload_data is not None:
-        entries = _normalize_entries(payload_data)
-        if entries:
-            new_entry = max(entries, key=_entry_sort_key)
-
-    if new_entry:
-        _store_entry(context, new_entry)
-    else:
-        cleaned_values = _empty_values()
-        for field in CARD_ORDER:
-            value = draft_values.get(field)
-            if value not in (None, ""):
-                cleaned_values[field] = value
-
-        cleaned_raw_values = _empty_values()
-        for field in CARD_ORDER:
-            raw_value = draft_raw_values.get(field)
-            if raw_value not in (None, ""):
-                cleaned_raw_values[field] = raw_value
-
-        context.user_data["body_params_values"] = cleaned_values
-        context.user_data["body_params_draft"] = {**cleaned_values}
-        context.user_data["body_params_values_raw"] = cleaned_raw_values
-        context.user_data["body_params_draft_raw"] = {**cleaned_raw_values}
-        context.user_data["body_params_dirty"] = False
-        if uuid:
-            context.user_data["body_params_uuid"] = uuid
-
-    saved_uuid = context.user_data.get("body_params_uuid")
-    if not saved_uuid and isinstance(new_entry, dict):
-        extracted_uuid = new_entry.get("uuid") or new_entry.get("id")
-        if extracted_uuid:
-            context.user_data["body_params_uuid"] = extracted_uuid
-
-    status_message = (
-        "✅ Запись обмеров обновлена."
-        if is_update
-        else "✅ Запись обмеров создана."
-    )
-
-    await _refresh_card(
-        context,
-        chat_id=card_chat_id,
-        message_id=card_message_id,
-        token=None,
-        status=status_message,
-        skip_fetch=True,
-    )
-
     return ConversationHandler.END
 
 
@@ -1081,15 +767,9 @@ async def delete_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ConversationHandler.END
 
-    # После успешного удаления сбрасываем сохранённые значения и черновик
+    # После успешного удаления сбрасываем сохранённые значения
     context.user_data.pop("body_params_uuid", None)
-    empty_values = _empty_values()
-    context.user_data["body_params_values"] = empty_values
-    context.user_data["body_params_draft"] = {**empty_values}
-    empty_raw = _empty_values()
-    context.user_data["body_params_values_raw"] = empty_raw
-    context.user_data["body_params_draft_raw"] = {**empty_raw}
-    context.user_data["body_params_dirty"] = False
+    context.user_data["body_params_values"] = {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
 
     await _refresh_card(
         context,
@@ -1100,3 +780,4 @@ async def delete_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     return ConversationHandler.END
+
