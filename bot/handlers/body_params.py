@@ -1,5 +1,5 @@
 # bot/handlers/body_params.py
-"""Обработчики отображения и обновления параметров тела пользователя через Gym-Stat"""
+"""Обработчики отображения и обновления параметров тела пользователя через Gym-Stat."""
 
 from __future__ import annotations
 
@@ -25,9 +25,12 @@ from bot.utils.db_utils import get_user_mode
 from bot.utils.logger import setup_logging
 from bot.utils.message_deletion import schedule_message_deletion
 
+
 logger = setup_logging()
 
+
 DATE_INPUT_PATTERN = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d{4}$")
+
 
 FIELD_TITLES = {
     "date": "Дата замеров",
@@ -39,6 +42,7 @@ FIELD_TITLES = {
     "forearm": "Предплечье",
     "wrist": "Запястье",
 }
+
 
 MEASUREMENT_KEYS = [
     "neck",
@@ -55,6 +59,91 @@ def _blank_values() -> dict[str, Any]:
     """Возвращает словарь с пустыми значениями параметров."""
 
     return {"date": None, **{key: None for key in MEASUREMENT_KEYS}}
+
+
+def _normalize_date_value(value: Any) -> str | None:
+    """Преобразует дату к формату YYYY-MM-DD."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, str):
+        text = value.strip()
+        if DATE_INPUT_PATTERN.match(text):
+            dt = datetime.strptime(text, "%d.%m.%Y")
+            return dt.date().isoformat()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            return text
+        normalized = text.replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if dt.tzinfo:
+            dt = dt.astimezone(timezone.utc)
+        return dt.date().isoformat()
+    return None
+
+
+def _normalize_datetime_for_payload(value: Any) -> str | None:
+    """Преобразует дату к ISO-8601 строке с текущим временем в UTC."""
+    if not value:
+        return None
+
+    # Получаем текущую дату и время в UTC
+    current_utc = datetime.now(timezone.utc)
+
+    if isinstance(value, datetime):
+        # Если это datetime, используем его дату, но добавляем текущее время
+        dt = datetime(
+            year=value.year,
+            month=value.month,
+            day=value.day,
+            hour=current_utc.hour,
+            minute=current_utc.minute,
+            second=current_utc.second,
+            tzinfo=timezone.utc
+        )
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        normalized_date = _normalize_date_value(text)
+        if not normalized_date:
+            return None
+        # Парсим дату и добавляем текущее время
+        dt = datetime.strptime(normalized_date, "%Y-%m-%d")
+        dt = dt.replace(
+            hour=current_utc.hour,
+            minute=current_utc.minute,
+            second=current_utc.second,
+            tzinfo=timezone.utc
+        )
+    else:
+        return None
+
+    return dt.replace(microsecond=0).isoformat()
+
+
+def _build_payload_from_draft(draft: dict[str, Any] | None) -> dict[str, Any]:
+    """Формирует payload для отправки в API на основе черновика пользователя."""
+    values = draft if isinstance(draft, dict) else {}
+    raw_date = values.get("date")
+    normalized_datetime = _normalize_datetime_for_payload(raw_date)
+
+    if normalized_datetime:
+        date_value = normalized_datetime
+    else:
+        date_value = datetime.now(timezone.utc).replace(microsecond=0).isoformat()  # Текущая дата и время
+
+    payload: dict[str, Any] = {"date": date_value}
+
+    for key in MEASUREMENT_KEYS:
+        value = values.get(key)
+        payload[key] = value if value not in (None, "") else 0
+
+    return payload
+
 
 
 def _normalize_entries(payload: Any) -> list[dict[str, Any]]:
@@ -118,31 +207,6 @@ def _normalize_mm_value(value: Any) -> float | None:
         return float(text.replace(",", "."))
     except ValueError:
         return None
-
-
-def _normalize_date_value(value: Any) -> str | None:
-    """Преобразует дату к формату YYYY-MM-DD."""
-
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, str):
-        text = value.strip()
-        if DATE_INPUT_PATTERN.match(text):
-            dt = datetime.strptime(text, "%d.%m.%Y")
-            return dt.date().isoformat()
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-            return text
-        normalized = text.replace("Z", "+00:00")
-        try:
-            dt = datetime.fromisoformat(normalized)
-        except ValueError:
-            return None
-        if dt.tzinfo:
-            dt = dt.astimezone(timezone.utc)
-        return dt.date().isoformat()
-    return None
 
 
 def _format_date_for_display(value: Any) -> str | None:
@@ -668,41 +732,8 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 
-async def cancel_body_param_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Отменяет ввод параметра и возвращает карточку обмеров."""
-
-    message = update.message
-    if message is None:
-        return ConversationHandler.END
-
-    chat_id = message.chat_id
-    user_id = message.from_user.id
-
-    schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
-
-    context.user_data.pop("pending_body_param", None)
-    context.user_data.pop("current_state", None)
-    context.user_data["conversation_active"] = False
-
-    message_info = context.user_data.get("body_params_message")
-    card_chat_id, card_message_id = (message_info or (chat_id, None))
-
-    token = await get_valid_access_token(user_id)
-    await _refresh_card(
-        context,
-        chat_id=card_chat_id,
-        message_id=card_message_id,
-        token=token,
-        status="ℹ️ Ввод отменён.",
-        skip_fetch=True,
-    )
-
-    return ConversationHandler.END
-
-
 async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Сохраняет черновик обмеров через API Gym-Stat."""
-
     query = update.callback_query
     if not query:
         logger.warning("save_body_params вызван без callback_query")
@@ -757,203 +788,13 @@ async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return ConversationHandler.END
 
-    payload: dict[str, Any] = {}
-
-    normalized_date = _normalize_date_value(draft.get("date")) if draft.get("date") else None
-    if normalized_date:
-        payload["date"] = normalized_date
-    else:
-        payload["date"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-    for key in MEASUREMENT_KEYS:
-        value = draft.get(key)
-        if value not in (None, ""):
-            payload[key] = value
-
-    uuid = context.user_data.get("body_params_uuid")
-
-    try:
-        if uuid:
-            response = await api_update_body_params(token, uuid, payload)
-        else:
-            response = await api_create_body_params(token, payload)
-    except httpx.HTTPError as exc:  # noqa: BLE001
-        logger.error("Ошибка HTTP при сохранении обмеров: %s", exc)
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=token,
-            status="❌ Не удалось сохранить замеры. Попробуйте позже.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Неожиданная ошибка при сохранении обмеров: %s", exc)
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=token,
-            status="❌ Не удалось сохранить замеры. Попробуйте позже.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    if response.status_code >= 400 and not uuid and response.status_code in {400, 409}:
-        # Если создание записи недоступно из-за существующей записи, пробуем обновить текущую.
-        uuid = context.user_data.get("body_params_uuid")
-        if uuid:
-            try:
-                response = await api_update_body_params(token, uuid, payload)
-            except Exception as exc:  # noqa: BLE001
-                logger.error("Не удалось обновить обмеры после ошибки создания: %s", exc)
-                await _refresh_card(
-                    context,
-                    chat_id=card_chat_id,
-                    message_id=card_message_id,
-                    token=token,
-                    status="❌ Не удалось сохранить замеры. Попробуйте позже.",
-                    skip_fetch=True,
-                )
-                return ConversationHandler.END
-
-    if response.status_code >= 400:
-        error_text = _extract_error_message(response) or "Не удалось сохранить замеры."
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=token,
-            status=f"❌ {html.escape(error_text)}",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    _, load_error = await _load_and_store(context, token)
-    if load_error:
-        status_text = f"✅ Замеры сохранены, но не удалось обновить данные: {html.escape(load_error)}"
-    else:
-        status_text = "✅ Замеры сохранены и синхронизированы с Gym-Stat."
-
-    await _refresh_card(
-        context,
-        chat_id=card_chat_id,
-        message_id=card_message_id,
-        token=token,
-        status=status_text,
-        skip_fetch=True,
-    )
-
-    return ConversationHandler.END
-
-
-async def cancel_body_param_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Отменяет ввод параметра и возвращает карточку обмеров."""
-
-    message = update.message
-    if message is None:
-        return ConversationHandler.END
-
-    chat_id = message.chat_id
-    user_id = message.from_user.id
-
-    schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
-
-    context.user_data.pop("pending_body_param", None)
-    context.user_data.pop("current_state", None)
-    context.user_data["conversation_active"] = False
-
-    message_info = context.user_data.get("body_params_message")
-    card_chat_id, card_message_id = (message_info or (chat_id, None))
-
-    token = await get_valid_access_token(user_id)
-    await _refresh_card(
-        context,
-        chat_id=card_chat_id,
-        message_id=card_message_id,
-        token=token,
-        status="ℹ️ Ввод отменён.",
-        skip_fetch=True,
-    )
-
-    return ConversationHandler.END
-
-
-async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Сохраняет черновик обмеров через API Gym-Stat."""
-
-    query = update.callback_query
-    if not query:
-        logger.warning("save_body_params вызван без callback_query")
-        return ConversationHandler.END
-
-    await query.answer()
-    user_id = query.from_user.id
-
-    context.user_data.pop("pending_body_param", None)
-    context.user_data.pop("current_state", None)
-    context.user_data["conversation_active"] = False
-
-    message = query.message
-    message_info = context.user_data.get("body_params_message")
-    card_chat_id, card_message_id = (message_info or ((message.chat_id if message else user_id), None))
-
-    draft = context.user_data.get("body_params_draft")
-    dirty = context.user_data.get("body_params_dirty", False)
-
-    if not dirty or not isinstance(draft, dict):
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="⚠️ Нет изменений для сохранения.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    mode = await get_user_mode(user_id)
-    if mode != "api":
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="🌐 Сохранение доступно только после подключения Gym-Stat.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    token = await get_valid_access_token(user_id)
-    if not token:
-        await _refresh_card(
-            context,
-            chat_id=card_chat_id,
-            message_id=card_message_id,
-            token=None,
-            status="🔐 Войдите через /login, чтобы отправить замеры.",
-            skip_fetch=True,
-        )
-        return ConversationHandler.END
-
-    payload: dict[str, Any] = {}
-
-    normalized_date = _normalize_date_value(draft.get("date")) if draft.get("date") else None
-    if normalized_date:
-        payload["date"] = normalized_date
-    else:
-        payload["date"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-    for key in MEASUREMENT_KEYS:
-        value = draft.get(key)
-        if value not in (None, ""):
-            payload[key] = value
+    payload = _build_payload_from_draft(draft)
+    logger.debug("Отправляем payload в api_create_body_params: %s", payload)  # Логирование для отладки
 
     try:
         response = await api_create_body_params(token, payload)
     except httpx.HTTPError as exc:  # noqa: BLE001
-        logger.error("Ошибка HTTP при создании обмеров: %s", exc)
+        logger.error("Ошибка HTTP при создании обмеров: %s, payload: %s", exc, payload)
         await _refresh_card(
             context,
             chat_id=card_chat_id,
@@ -964,7 +805,7 @@ async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001
-        logger.error("Неожиданная ошибка при создании обмеров: %s", exc)
+        logger.error("Неожиданная ошибка при создании обмеров: %s, payload: %s", exc, payload)
         await _refresh_card(
             context,
             chat_id=card_chat_id,
@@ -977,6 +818,7 @@ async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if response.status_code >= 400:
         error_text = _extract_error_message(response) or "Не удалось сохранить замеры."
+        logger.error("Ошибка API: %s, payload: %s", response.text, payload)
         await _refresh_card(
             context,
             chat_id=card_chat_id,
@@ -999,6 +841,39 @@ async def save_body_params(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         message_id=card_message_id,
         token=token,
         status=status_text,
+        skip_fetch=True,
+    )
+
+    return ConversationHandler.END
+
+
+
+async def cancel_body_param_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет ввод параметра и возвращает карточку обмеров."""
+
+    message = update.message
+    if message is None:
+        return ConversationHandler.END
+
+    chat_id = message.chat_id
+    user_id = message.from_user.id
+
+    schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+
+    context.user_data.pop("pending_body_param", None)
+    context.user_data.pop("current_state", None)
+    context.user_data["conversation_active"] = False
+
+    message_info = context.user_data.get("body_params_message")
+    card_chat_id, card_message_id = (message_info or (chat_id, None))
+
+    token = await get_valid_access_token(user_id)
+    await _refresh_card(
+        context,
+        chat_id=card_chat_id,
+        message_id=card_message_id,
+        token=token,
+        status="ℹ️ Ввод отменён.",
         skip_fetch=True,
     )
 
