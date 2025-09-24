@@ -91,6 +91,13 @@ from bot.handlers.body_params import (
     save_body_params,
     delete_body_params,
 )
+from bot.handlers.workouts import (
+    handle_workout_creation_input,
+    handle_workout_exercise_selection,
+    show_workout_details,
+    show_workouts_menu,
+    start_create_workout,
+)
 from handlers.set_age import set_age
 from handlers.set_weight import set_weight
 from handlers.set_height import set_height
@@ -111,6 +118,7 @@ from bot.config.settings import (
     EXERCISE_SET_DESCRIPTION,
     EXERCISE_RENAME,
     EXERCISE_UPDATE_DESCRIPTION,
+    WORKOUT_CREATION,
 )
 from bot.ai_assistant.ai_handler import (
     choose_ai_model,
@@ -173,8 +181,20 @@ def main() -> None:
             CallbackQueryHandler(show_profile, pattern='^show_profile$'),
             CallbackQueryHandler(start_training, pattern='^start_training$'),
             CallbackQueryHandler(
+                show_workouts_menu,
+                pattern='^workouts$'
+            ),
+            CallbackQueryHandler(
                 show_exercises_menu,
-                pattern='^(my_trainings|exercises_menu)$'
+                pattern='^exercises_menu$'
+            ),
+            CallbackQueryHandler(
+                show_workout_details,
+                pattern='^workout:view:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                start_create_workout,
+                pattern='^workout:create$'
             ),
             CallbackQueryHandler(show_exercises, pattern='^exercise_list$'),
             CallbackQueryHandler(
@@ -309,6 +329,16 @@ def main() -> None:
                     filters.TEXT & ~filters.COMMAND,
                     handle_exercise_description_update
                 )
+            ],
+            WORKOUT_CREATION: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handle_workout_creation_input,
+                ),
+                CallbackQueryHandler(
+                    handle_workout_exercise_selection,
+                    pattern='^workout:select_exercise:[^:]+$'
+                ),
             ],
             AI_CONSULTATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
