@@ -64,12 +64,26 @@ str: Путь к файлу базы данных, используемой бо
 
 # Определение состояний для ConversationHandler.
 # Используется для управления диалогами при вводе данных пользователем.
-SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER, AI_CONSULTATION, SET_BODY_PARAM = range(7)
+(
+    SET_NAME,
+    SET_AGE,
+    SET_WEIGHT,
+    SET_HEIGHT,
+    SET_GENDER,
+    AI_CONSULTATION,
+    SET_BODY_PARAM,
+    EXERCISE_GROUP_SET_NAME,
+    EXERCISE_GROUP_SET_DESCRIPTION,
+    EXERCISE_GROUP_RENAME,
+    EXERCISE_GROUP_UPDATE_DESCRIPTION,
+) = range(11)
 """
-Константы: SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER, AI_CONSULTATION, SET_BODY_PARAM
-Описание: Состояния ConversationHandler для обработки ввода имени, возраста, веса,
-роста, пола пользователя и параметров обмеров тела.
-Значения: Целые числа от 0 до 6, представляющие этапы диалога.
+Константы состояний ConversationHandler:
+- SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER — ввод персональных данных;
+- AI_CONSULTATION — диалог с AI-консультантом;
+- SET_BODY_PARAM — ввод параметров тела;
+- EXERCISE_GROUP_SET_NAME, EXERCISE_GROUP_SET_DESCRIPTION — создание группы упражнений;
+- EXERCISE_GROUP_RENAME, EXERCISE_GROUP_UPDATE_DESCRIPTION — редактирование группы упражнений.
 """
 
 # Список допустимых команд бота.

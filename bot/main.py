@@ -48,11 +48,25 @@ from bot.commands.delete_data_command import delete_data
 from bot.handlers.profile_display import show_profile
 from bot.handlers.misc_handlers import (
     start_training,
-    show_trainings,
     show_settings,
     show_personal_data_menu,
     show_training_settings,
     return_to_main_menu
+)
+from bot.handlers.exercises import (
+    show_exercises_menu,
+    show_exercises_placeholder,
+    show_exercise_groups,
+    show_exercise_group_details,
+    prompt_create_exercise_group,
+    handle_exercise_group_name_input,
+    handle_exercise_group_description_input,
+    prompt_rename_exercise_group,
+    handle_exercise_group_rename_input,
+    prompt_change_exercise_group_description,
+    handle_exercise_group_description_update,
+    ask_delete_exercise_group,
+    delete_exercise_group,
 )
 from bot.handlers.weight_data import show_weight_data
 from bot.handlers.body_params import (
@@ -75,6 +89,10 @@ from bot.config.settings import (
     SET_HEIGHT,
     SET_GENDER,
     SET_BODY_PARAM,
+    EXERCISE_GROUP_SET_NAME,
+    EXERCISE_GROUP_SET_DESCRIPTION,
+    EXERCISE_GROUP_RENAME,
+    EXERCISE_GROUP_UPDATE_DESCRIPTION,
 )
 from bot.ai_assistant.ai_handler import (
     choose_ai_model,
@@ -136,7 +154,36 @@ def main() -> None:
         entry_points=[
             CallbackQueryHandler(show_profile, pattern='^show_profile$'),
             CallbackQueryHandler(start_training, pattern='^start_training$'),
-            CallbackQueryHandler(show_trainings, pattern='^my_trainings$'),
+            CallbackQueryHandler(
+                show_exercises_menu,
+                pattern='^(my_trainings|exercises_menu)$'
+            ),
+            CallbackQueryHandler(show_exercises_placeholder, pattern='^exercise_list$'),
+            CallbackQueryHandler(show_exercise_groups, pattern='^exercise_groups$'),
+            CallbackQueryHandler(
+                show_exercise_group_details,
+                pattern='^exercise_group:view:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                prompt_create_exercise_group,
+                pattern='^exercise_group:create$'
+            ),
+            CallbackQueryHandler(
+                prompt_rename_exercise_group,
+                pattern='^exercise_group:rename:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                prompt_change_exercise_group_description,
+                pattern='^exercise_group:description:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                ask_delete_exercise_group,
+                pattern='^exercise_group:ask_delete:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                delete_exercise_group,
+                pattern='^exercise_group:delete:[^:]+$'
+            ),
             CallbackQueryHandler(choose_ai_model, pattern='^my_ai_assistant$'),
             CallbackQueryHandler(choose_ai_model, pattern='^start_ai_assistant$'),
             CallbackQueryHandler(start_chatgpt_assistant, pattern='^start_chatgpt$'),
@@ -168,6 +215,24 @@ def main() -> None:
             SET_BODY_PARAM: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_body_param_input),
                 CommandHandler("cancel", cancel_body_param_input),
+            ],
+            EXERCISE_GROUP_SET_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_exercise_group_name_input)
+            ],
+            EXERCISE_GROUP_SET_DESCRIPTION: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handle_exercise_group_description_input
+                )
+            ],
+            EXERCISE_GROUP_RENAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_exercise_group_rename_input)
+            ],
+            EXERCISE_GROUP_UPDATE_DESCRIPTION: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handle_exercise_group_description_update
+                )
             ],
             AI_CONSULTATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
