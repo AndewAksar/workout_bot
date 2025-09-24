@@ -80,7 +80,8 @@ str: Путь к файлу базы данных, используемой бо
     EXERCISE_SET_DESCRIPTION,
     EXERCISE_RENAME,
     EXERCISE_UPDATE_DESCRIPTION,
-) = range(15)
+    WORKOUT_CREATION,
+) = range(16)
 """
 Константы состояний ConversationHandler:
 - SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER — ввод персональных данных;

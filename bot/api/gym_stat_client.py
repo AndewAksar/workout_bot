@@ -82,12 +82,39 @@ async def update_profile(token: str, payload: Dict[str, Any]) -> httpx.Response:
     return await _request("PATCH", "/api/users/me", token=token, json=payload)
 
 
-async def get_trainings(
-    token: str, params: Optional[Dict[str, Any]] = None
+async def get_workouts(
+    token: str,
+    params: Optional[Dict[str, Any]] = None,
 ) -> httpx.Response:
     """Получение списка тренировок пользователя."""
-    # Список тренировок возвращается по маршруту ``/api/trainings``.
-    return await _request("GET", "/api/trainings", token=token, params=params)
+    return await _request("GET", "/api/workouts", token=token, params=params)
+
+
+async def get_workout(token: str, uuid: str) -> httpx.Response:
+    """Получение данных конкретной тренировки."""
+    endpoint = f"/api/workouts/{uuid}"
+    return await _request("GET", endpoint, token=token)
+
+
+async def create_workout(token: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Создание новой тренировки."""
+    return await _request("POST", "/api/workouts", token=token, json=payload)
+
+
+async def update_workout(
+    token: str,
+    uuid: str,
+    payload: Dict[str, Any],
+) -> httpx.Response:
+    """Обновление тренировки."""
+    endpoint = f"/api/workouts/{uuid}"
+    return await _request("PATCH", endpoint, token=token, json=payload)
+
+
+async def delete_workout(token: str, uuid: str) -> httpx.Response:
+    """Удаление тренировки."""
+    endpoint = f"/api/workouts/{uuid}"
+    return await _request("DELETE", endpoint, token=token)
 
 
 async def get_weight_data(
