@@ -12,9 +12,14 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.api.gym_stat_client import (
+    create_exercise as api_create_exercise,
     create_exercise_group as api_create_exercise_group,
+    delete_exercise as api_delete_exercise,
     delete_exercise_group as api_delete_exercise_group,
+    get_exercise as api_get_exercise,
     get_exercise_groups as api_get_exercise_groups,
+    get_exercises as api_get_exercises,
+    update_exercise as api_update_exercise,
     update_exercise_group as api_update_exercise_group,
 )
 from bot.config.settings import (
@@ -22,9 +27,18 @@ from bot.config.settings import (
     EXERCISE_GROUP_SET_DESCRIPTION,
     EXERCISE_GROUP_SET_NAME,
     EXERCISE_GROUP_UPDATE_DESCRIPTION,
+    EXERCISE_RENAME,
+    EXERCISE_SET_DESCRIPTION,
+    EXERCISE_SET_NAME,
+    EXERCISE_UPDATE_DESCRIPTION,
 )
 from bot.keyboards.exercises_menu import (
+    build_exercise_group_selection_keyboard,
+    build_exercise_group_update_keyboard,
     build_exercise_groups_keyboard,
+    build_exercises_keyboard,
+    get_exercise_actions_keyboard,
+    get_exercise_delete_keyboard,
     get_exercise_group_actions_keyboard,
     get_exercise_group_delete_keyboard,
     get_exercises_menu,
@@ -40,11 +54,20 @@ _PROMPT_KEY = "exercise_group_prompt"
 _DRAFT_KEY = "exercise_group_draft"
 _UUID_KEY = "exercise_group_uuid"
 _CACHE_KEY = "exercise_groups_cache"
+_EXERCISE_PROMPT_KEY = "exercise_prompt"
+_EXERCISE_DRAFT_KEY = "exercise_draft"
+_EXERCISE_UUID_KEY = "exercise_uuid"
+_EXERCISE_CACHE_KEY = "exercises_cache"
 
 
 _DESCRIPTION_INTRO = (
     "🗂️ <b>Группы упражнений</b>\n"
     "Описание: Группы помогают объединять упражнения по категориям и быстрее находить их в тренировках.\n"
+)
+
+_EXERCISES_INTRO = (
+    "📋 <b>Упражнения</b>\n"
+    "Описание: Упражнения синхронизируются с Gym-Stat и привязаны к выбранным группам.\n"
 )
 
 
@@ -57,13 +80,13 @@ async def show_exercises_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if mode == "api":
         details = (
-            "Здесь вы можете управлять группами упражнений Gym-Stat и в дальнейшем добавлять сами упражнения.\n"
-            "Выберите нужный раздел ниже."
+            "Здесь вы можете управлять группами и упражнениями Gym-Stat: создавать новые элементы, обновлять их и удалять.\n"
+            "Выберите нужный раздел ниже, чтобы перейти к списку упражнений или категорий."
         )
     else:
         details = (
             "Сейчас активен локальный режим. Для работы с упражнениями и группами подключите режим Gym-Stat через «🔄 Сменить режим».\n"
-            "После авторизации появится возможность создавать категории упражнений."
+            "После авторизации появится возможность создавать категории и упражнения."
         )
 
     text = (
@@ -81,28 +104,55 @@ async def show_exercises_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     return ConversationHandler.END
 
 
-async def show_exercises_placeholder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Заглушка для раздела «Упражнения» (будет реализован позже)."""
+async def show_exercises(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отображает список упражнений пользователя."""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    mode = await get_user_mode(user_id)
 
-    if mode == "api":
-        message = (
-            "📋 Раздел «Упражнения» находится в разработке.\n"
-            "Вы уже можете создавать группы упражнений, чтобы позже добавлять в них упражнения из Gym-Stat."
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "Управление упражнениями доступно только после переключения на режим Gym-Stat."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
         )
-    else:
-        message = (
-            "📋 Раздел «Упражнения» появится позже.\n"
-            "Подключите режим Gym-Stat, чтобы управлять категориями упражнений и синхронизировать данные."
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "🔐 Для работы с упражнениями выполните вход через /login или кнопку «Войти»."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
         )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    exercises = await _fetch_exercises(context, user_id, token)
+    if exercises is None:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "❌ Не удалось получить данные с сервера. Попробуйте повторить попытку позже."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
 
     await query.message.edit_text(
-        f"{message}\n\nВыберите действие ниже:",
+        _build_exercises_text(exercises),
         parse_mode="HTML",
-        reply_markup=get_exercises_menu(),
+        reply_markup=build_exercises_keyboard(exercises),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -111,6 +161,12 @@ async def show_exercises_placeholder(update: Update, context: ContextTypes.DEFAU
 def _reset_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Удаляет временные данные, связанные с управлением группами упражнений."""
     for key in (_PROMPT_KEY, _DRAFT_KEY, _UUID_KEY):
+        context.user_data.pop(key, None)
+
+
+def _reset_exercise_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Удаляет временные данные, связанные с управлением упражнениями."""
+    for key in (_EXERCISE_PROMPT_KEY, _EXERCISE_DRAFT_KEY, _EXERCISE_UUID_KEY):
         context.user_data.pop(key, None)
 
 
@@ -232,6 +288,1037 @@ async def _fetch_groups(
     groups = _filter_groups(response.json() or [])
     context.user_data[_CACHE_KEY] = groups
     return groups
+
+
+def _filter_exercises(payload: Any) -> list[dict]:
+    """Преобразует ответ API в список упражнений."""
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("data", "results", "items", "records"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        if payload.get("uuid"):
+            return [payload]
+    return []
+
+
+def _find_exercise(exercises: Iterable[dict], uuid: str) -> Optional[dict]:
+    for exercise in exercises:
+        if isinstance(exercise, dict) and exercise.get("uuid") == uuid:
+            return exercise
+    return None
+
+
+def _format_exercise_details(exercise: dict) -> str:
+    name = html.escape(str(exercise.get("name") or "Без названия"))
+    description_raw = str(exercise.get("description") or "—")
+    description = html.escape(description_raw)
+    uuid = html.escape(str(exercise.get("uuid") or "—"))
+
+    group = exercise.get("exerciseGroup") or exercise.get("group") or {}
+    if not isinstance(group, dict):
+        group = {}
+    group_name = html.escape(str(group.get("name") or "Не выбрана"))
+    group_uuid_raw = group.get("uuid")
+    group_uuid = html.escape(str(group_uuid_raw)) if group_uuid_raw else "—"
+
+    created = _format_datetime(exercise.get("createdAt") or exercise.get("created_at"))
+    updated = _format_datetime(exercise.get("updatedAt") or exercise.get("updated_at"))
+
+    lines = [
+        f"📋 <b>{name}</b>",
+        f"Описание: {description}",
+        f"UUID: <code>{uuid}</code>",
+    ]
+
+    group_line = f"Группа: {group_name}"
+    if group_uuid_raw:
+        group_line += f" (UUID: <code>{group_uuid}</code>)"
+    lines.append(group_line)
+
+    if created:
+        lines.append(f"Создано: {created}")
+    if updated:
+        lines.append(f"Обновлено: {updated}")
+
+    lines.append(
+        "\nИспользуйте кнопки ниже, чтобы изменить название, описание, группу или удалить упражнение."
+    )
+    return "\n".join(lines)
+
+
+def _build_exercises_text(exercises: Iterable[dict]) -> str:
+    exercises_list = list(exercises)
+    if exercises_list:
+        return (
+            _EXERCISES_INTRO
+            + "Выберите упражнение, чтобы посмотреть детали или изменить его параметры."
+        )
+    return (
+        _EXERCISES_INTRO
+        + "Пока у вас нет упражнений. Нажмите «➕ Создать упражнение», чтобы добавить первое."
+    )
+
+
+async def _fetch_exercises(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    token: str,
+) -> Optional[list[dict]]:
+    try:
+        response = await api_get_exercises(token)
+    except httpx.RequestError as exc:
+        logger.error("Ошибка запроса списка упражнений для пользователя %s: %s", user_id, exc)
+        return None
+
+    if response.status_code != 200:
+        logger.warning(
+            "Не удалось получить упражнения (%s): %s",
+            response.status_code,
+            response.text,
+        )
+        return None
+
+    exercises = _filter_exercises(response.json() or [])
+    context.user_data[_EXERCISE_CACHE_KEY] = exercises
+    return exercises
+
+
+async def _fetch_exercise(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    token: str,
+    uuid: str,
+) -> Optional[dict]:
+    try:
+        response = await api_get_exercise(token, uuid)
+    except httpx.RequestError as exc:
+        logger.error("Ошибка запроса упражнения %s для пользователя %s: %s", uuid, user_id, exc)
+        return None
+
+    if response.status_code != 200:
+        logger.warning(
+            "Не удалось получить упражнение %s (%s): %s",
+            uuid,
+            response.status_code,
+            response.text,
+        )
+        return None
+
+    payload = response.json() or {}
+    if not isinstance(payload, dict):
+        return None
+
+    exercises = context.user_data.get(_EXERCISE_CACHE_KEY)
+    if isinstance(exercises, list):
+        updated = [item for item in exercises if isinstance(item, dict) and item.get("uuid") != uuid]
+        updated.append(payload)
+        context.user_data[_EXERCISE_CACHE_KEY] = updated
+
+    return payload
+
+
+async def show_exercise_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отображает подробности выбранного упражнения."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 2)
+    uuid = parts[2] if len(parts) == 3 else ""
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "Просмотр упражнений доступен только в режиме Gym-Stat."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "🔐 Авторизуйтесь через /login, чтобы просматривать упражнения."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    exercises = context.user_data.get(_EXERCISE_CACHE_KEY, []) or []
+    exercise = _find_exercise(exercises, uuid)
+    if exercise is None:
+        exercise = await _fetch_exercise(context, user_id, token, uuid)
+        if exercise is None:
+            exercises = await _fetch_exercises(context, user_id, token) or []
+            await query.message.edit_text(
+                (
+                    _EXERCISES_INTRO
+                    + "⚠️ Не удалось найти выбранное упражнение. Возможно, оно было удалено."
+                ),
+                parse_mode="HTML",
+                reply_markup=build_exercises_keyboard(exercises),
+            )
+            context.user_data["conversation_active"] = False
+            return ConversationHandler.END
+
+    context.user_data[_EXERCISE_UUID_KEY] = uuid
+    await query.message.edit_text(
+        _format_exercise_details(exercise),
+        parse_mode="HTML",
+        reply_markup=get_exercise_actions_keyboard(uuid),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def prompt_create_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запрашивает данные для создания нового упражнения."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "Переключитесь на режим Gym-Stat, чтобы добавлять упражнения."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "🔐 Авторизуйтесь через /login, чтобы создавать упражнения."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    groups = await _fetch_groups(context, user_id, token)
+    if groups is None:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "❌ Не удалось получить список групп. Попробуйте позже."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+    if not groups:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "⚠️ Чтобы создать упражнение, сначала добавьте группу в разделе «Группы упражнений»."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
+    context.user_data[_EXERCISE_DRAFT_KEY] = {}
+
+    await query.message.edit_text(
+        (
+            "✍️ <b>Введите название упражнения</b>\n"
+            "Например: <code>Жим лёжа</code>. /cancel — отмена."
+        ),
+        parse_mode="HTML",
+    )
+    context.user_data["conversation_active"] = True
+    return EXERCISE_SET_NAME
+
+
+async def handle_exercise_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает ввод названия упражнения."""
+    message = update.message
+    if not message or not message.text:
+        return EXERCISE_SET_NAME
+
+    name = message.text.strip()
+    if not name:
+        await message.reply_text("⚠️ Название не может быть пустым. Укажите другое значение.")
+        return EXERCISE_SET_NAME
+
+    draft = context.user_data.get(_EXERCISE_DRAFT_KEY)
+    if not isinstance(draft, dict):
+        draft = {}
+    draft["name"] = name
+    context.user_data[_EXERCISE_DRAFT_KEY] = draft
+
+    prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    text = (
+        "✍️ <b>Введите описание упражнения</b>\n"
+        "Можно указать краткую подсказку. Отправьте «-», чтобы оставить пустым."
+    )
+    if prompt:
+        chat_id, message_id = prompt
+        await _safe_edit_message(context, chat_id, message_id, text=text)
+    else:
+        await message.reply_text(text, parse_mode="HTML")
+
+    context.user_data["conversation_active"] = True
+    return EXERCISE_SET_DESCRIPTION
+
+
+async def handle_exercise_description_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Сохраняет описание и предлагает выбрать группу."""
+    message = update.message
+    if not message or message.text is None:
+        return EXERCISE_SET_DESCRIPTION
+
+    description = message.text.strip()
+    if description == "-":
+        description = ""
+
+    draft = context.user_data.get(_EXERCISE_DRAFT_KEY)
+    name = draft.get("name") if isinstance(draft, dict) else None
+    if not name:
+        await message.reply_text("⚠️ Не удалось определить название упражнения. Попробуйте снова.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    user_id = message.from_user.id
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await message.reply_text("Для создания упражнений необходимо включить режим Gym-Stat.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await message.reply_text("🔐 Пожалуйста, выполните вход через /login и повторите попытку.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    draft["description"] = description
+    context.user_data[_EXERCISE_DRAFT_KEY] = draft
+
+    groups = context.user_data.get(_CACHE_KEY)
+    if not isinstance(groups, list) or not groups:
+        groups = await _fetch_groups(context, user_id, token)
+        if groups is None:
+            await message.reply_text("❌ Не удалось получить список групп. Попробуйте позже.")
+            _reset_exercise_flow(context)
+            context.user_data["conversation_active"] = False
+            return ConversationHandler.END
+        if not groups:
+            await message.reply_text(
+                "⚠️ Прежде чем создать упражнение, добавьте хотя бы одну группу в разделе «Группы упражнений»."
+            )
+            _reset_exercise_flow(context)
+            context.user_data["conversation_active"] = False
+            return ConversationHandler.END
+
+    prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    text = (
+        "📂 <b>Выберите группу для упражнения</b>\n"
+        "Нажмите на подходящую категорию ниже. Если нужной группы нет, сначала создайте её."
+    )
+    if prompt:
+        chat_id, message_id = prompt
+        await _safe_edit_message(
+            context,
+            chat_id,
+            message_id,
+            text=text,
+            reply_markup=build_exercise_group_selection_keyboard(groups),
+        )
+    else:
+        await message.reply_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=build_exercise_group_selection_keyboard(groups),
+        )
+
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def handle_exercise_group_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Создаёт упражнение после выбора группы."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 3)
+    group_uuid = parts[3] if len(parts) == 4 else ""
+
+    draft = context.user_data.get(_EXERCISE_DRAFT_KEY)
+    name = draft.get("name") if isinstance(draft, dict) else None
+    description = draft.get("description") if isinstance(draft, dict) else ""
+
+    if not name or not group_uuid:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "⚠️ Не удалось определить данные упражнения. Повторите создание ещё раз."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "Создание упражнений доступно только в режиме Gym-Stat."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "🔐 Авторизуйтесь через /login, чтобы создавать упражнения."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    payload = {
+        "name": name,
+        "description": description,
+        "exerciseGroupId": group_uuid,
+    }
+
+    try:
+        response = await api_create_exercise(token, payload)
+    except httpx.RequestError as exc:
+        logger.error("Ошибка создания упражнения для пользователя %s: %s", user_id, exc)
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Не удалось создать упражнение. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if response.status_code not in (200, 201):
+        logger.warning(
+            "Ошибка API при создании упражнения (%s): %s",
+            response.status_code,
+            response.text,
+        )
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Gym-Stat вернул ошибку при создании упражнения.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    exercises = await _fetch_exercises(context, user_id, token) or []
+
+    prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    if prompt:
+        chat_id, message_id = prompt
+        await _safe_edit_message(
+            context,
+            chat_id,
+            message_id,
+            text=_build_exercises_text(exercises),
+            reply_markup=build_exercises_keyboard(exercises),
+        )
+    else:
+        await query.message.edit_text(
+            _build_exercises_text(exercises),
+            parse_mode="HTML",
+            reply_markup=build_exercises_keyboard(exercises),
+        )
+
+    _reset_exercise_flow(context)
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def handle_exercise_creation_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет создание упражнения и возвращает список."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    _reset_exercise_flow(context)
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "Управление упражнениями доступно только в режиме Gym-Stat."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                _EXERCISES_INTRO
+                + "🔐 Для работы с упражнениями выполните вход через /login."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    exercises = await _fetch_exercises(context, user_id, token)
+    if exercises is None:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Не удалось обновить список упражнений. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    await query.message.edit_text(
+        _build_exercises_text(exercises),
+        parse_mode="HTML",
+        reply_markup=build_exercises_keyboard(exercises),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def prompt_rename_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запрашивает новое название для упражнения."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 2)
+    uuid = parts[2] if len(parts) == 3 else ""
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "Переименовать упражнение можно только в режиме Gym-Stat.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "🔐 Авторизуйтесь в Gym-Stat, чтобы редактировать упражнения.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    context.user_data[_EXERCISE_UUID_KEY] = uuid
+    context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
+
+    await query.message.edit_text(
+        (
+            "✏️ <b>Введите новое название упражнения</b>\n"
+            "Отправьте /cancel, чтобы выйти без изменений."
+        ),
+        parse_mode="HTML",
+    )
+    context.user_data["conversation_active"] = True
+    return EXERCISE_RENAME
+
+
+async def handle_exercise_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обновляет название упражнения."""
+    message = update.message
+    if not message or not message.text:
+        return EXERCISE_RENAME
+
+    new_name = message.text.strip()
+    if not new_name:
+        await message.reply_text("⚠️ Название не может быть пустым.")
+        return EXERCISE_RENAME
+
+    uuid = context.user_data.get(_EXERCISE_UUID_KEY)
+    if not uuid:
+        await message.reply_text("⚠️ Не удалось определить упражнение. Попробуйте снова.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    user_id = message.from_user.id
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await message.reply_text("Переименование доступно только в режиме Gym-Stat.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await message.reply_text("🔐 Авторизуйтесь через /login и повторите попытку.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    try:
+        response = await api_update_exercise(token, uuid, {"name": new_name})
+    except httpx.RequestError as exc:
+        logger.error("Ошибка обновления названия упражнения %s: %s", uuid, exc)
+        await message.reply_text("❌ Не удалось обновить название. Попробуйте позже.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if response.status_code not in (200, 204):
+        logger.warning(
+            "Ошибка API при переименовании упражнения (%s): %s",
+            response.status_code,
+            response.text,
+        )
+        await message.reply_text("❌ Gym-Stat вернул ошибку при переименовании упражнения.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    chat_id, message_id = prompt if prompt else (message.chat_id, None)
+
+    exercises = await _fetch_exercises(context, user_id, token) or []
+    exercise = _find_exercise(exercises, uuid) or {"uuid": uuid, "name": new_name}
+
+    text = _format_exercise_details(exercise)
+    markup = get_exercise_actions_keyboard(uuid)
+
+    if message_id is not None:
+        await _safe_edit_message(context, chat_id, message_id, text=text, reply_markup=markup)
+    else:
+        await message.reply_text(text, parse_mode="HTML", reply_markup=markup)
+
+    _reset_exercise_flow(context)
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def prompt_change_exercise_description(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Запрашивает новое описание для упражнения."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 2)
+    uuid = parts[2] if len(parts) == 3 else ""
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "Редактирование описания доступно только в режиме Gym-Stat.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "🔐 Авторизуйтесь, чтобы редактировать упражнения.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    context.user_data[_EXERCISE_UUID_KEY] = uuid
+    context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
+
+    await query.message.edit_text(
+        (
+            "📝 <b>Введите новое описание упражнения</b>\n"
+            "Отправьте «-», чтобы очистить описание. /cancel — отмена."
+        ),
+        parse_mode="HTML",
+    )
+    context.user_data["conversation_active"] = True
+    return EXERCISE_UPDATE_DESCRIPTION
+
+
+async def handle_exercise_description_update(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обновляет описание упражнения."""
+    message = update.message
+    if not message or message.text is None:
+        return EXERCISE_UPDATE_DESCRIPTION
+
+    description = message.text.strip()
+    if description == "-":
+        description = ""
+
+    uuid = context.user_data.get(_EXERCISE_UUID_KEY)
+    if not uuid:
+        await message.reply_text("⚠️ Не удалось определить упражнение. Попробуйте снова.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    user_id = message.from_user.id
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await message.reply_text("Редактирование доступно только в режиме Gym-Stat.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await message.reply_text("🔐 Авторизуйтесь через /login и повторите попытку.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    try:
+        response = await api_update_exercise(token, uuid, {"description": description})
+    except httpx.RequestError as exc:
+        logger.error("Ошибка обновления описания упражнения %s: %s", uuid, exc)
+        await message.reply_text("❌ Не удалось обновить описание. Попробуйте позже.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if response.status_code not in (200, 204):
+        logger.warning(
+            "Ошибка API при обновлении описания упражнения (%s): %s",
+            response.status_code,
+            response.text,
+        )
+        await message.reply_text("❌ Gym-Stat вернул ошибку при обновлении описания.")
+        _reset_exercise_flow(context)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    chat_id, message_id = prompt if prompt else (message.chat_id, None)
+
+    exercises = await _fetch_exercises(context, user_id, token) or []
+    exercise = _find_exercise(exercises, uuid) or {"uuid": uuid, "description": description}
+
+    text = _format_exercise_details(exercise)
+    markup = get_exercise_actions_keyboard(uuid)
+
+    if message_id is not None:
+        await _safe_edit_message(context, chat_id, message_id, text=text, reply_markup=markup)
+    else:
+        await message.reply_text(text, parse_mode="HTML", reply_markup=markup)
+
+    _reset_exercise_flow(context)
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def prompt_change_exercise_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Предлагает выбрать новую группу для упражнения."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 2)
+    uuid = parts[2] if len(parts) == 3 else ""
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "Смена группы доступна только в режиме Gym-Stat.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "🔐 Авторизуйтесь, чтобы редактировать упражнения.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    exercises = context.user_data.get(_EXERCISE_CACHE_KEY, []) or []
+    exercise = _find_exercise(exercises, uuid)
+    if exercise is None:
+        exercise = await _fetch_exercise(context, user_id, token, uuid)
+
+    groups = await _fetch_groups(context, user_id, token)
+    if groups is None:
+        message_text = (
+            _format_exercise_details(exercise)
+            if exercise
+            else _EXERCISES_INTRO + "❌ Не удалось получить список групп. Попробуйте позже."
+        )
+        markup = (
+            get_exercise_actions_keyboard(uuid)
+            if exercise
+            else get_exercises_menu()
+        )
+        await query.message.edit_text(message_text, parse_mode="HTML", reply_markup=markup)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if not groups:
+        message_text = (
+            (_format_exercise_details(exercise) + "\n\n⚠️ Добавьте хотя бы одну группу, чтобы сменить категорию.")
+            if exercise
+            else _EXERCISES_INTRO
+            + "⚠️ Добавьте хотя бы одну группу упражнений, чтобы можно было изменить категорию."
+        )
+        markup = (
+            get_exercise_actions_keyboard(uuid)
+            if exercise
+            else get_exercises_menu()
+        )
+        await query.message.edit_text(message_text, parse_mode="HTML", reply_markup=markup)
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    context.user_data[_EXERCISE_UUID_KEY] = uuid
+    context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
+
+    await query.message.edit_text(
+        (
+            "📂 <b>Выберите новую группу для упражнения</b>\n"
+            "Нажмите на подходящую категорию ниже."
+        ),
+        parse_mode="HTML",
+        reply_markup=build_exercise_group_update_keyboard(uuid, groups),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def handle_exercise_group_update_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Меняет группу упражнения после выбора категории."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 4)
+    exercise_uuid = parts[3] if len(parts) >= 4 else ""
+    group_uuid = parts[4] if len(parts) >= 5 else ""
+
+    if not exercise_uuid or not group_uuid:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "⚠️ Не удалось определить выбранные значения. Попробуйте снова.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "Смена группы доступна только в режиме Gym-Stat.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "🔐 Авторизуйтесь через /login, чтобы управлять упражнениями.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    try:
+        response = await api_update_exercise(token, exercise_uuid, {"exerciseGroupId": group_uuid})
+    except httpx.RequestError as exc:
+        logger.error("Ошибка смены группы у упражнения %s: %s", exercise_uuid, exc)
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Не удалось сменить группу. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if response.status_code not in (200, 204):
+        logger.warning(
+            "Ошибка API при смене группы упражнения (%s): %s",
+            response.status_code,
+            response.text,
+        )
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Не удалось сменить группу. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    chat_id, message_id = prompt if prompt else (query.message.chat_id, query.message.message_id)
+
+    exercises = await _fetch_exercises(context, user_id, token) or []
+    exercise = _find_exercise(exercises, exercise_uuid)
+
+    text = _format_exercise_details(exercise or {"uuid": exercise_uuid})
+    markup = get_exercise_actions_keyboard(exercise_uuid)
+
+    if prompt:
+        await _safe_edit_message(context, chat_id, message_id, text=text, reply_markup=markup)
+    else:
+        await query.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+    _reset_exercise_flow(context)
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def ask_delete_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Выводит подтверждение удаления упражнения."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+    parts = data.split(":", 2)
+    uuid = parts[2] if len(parts) == 3 else ""
+
+    exercises = context.user_data.get(_EXERCISE_CACHE_KEY, []) or []
+    exercise = _find_exercise(exercises, uuid)
+    name = html.escape(str(exercise.get("name") if exercise else "это упражнение"))
+
+    await query.message.edit_text(
+        (
+            f"🗑️ Удалить упражнение <b>{name}</b>?\n"
+            "Это действие необратимо и удалит упражнение из Gym-Stat."
+        ),
+        parse_mode="HTML",
+        reply_markup=get_exercise_delete_keyboard(uuid),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def delete_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Удаляет выбранное упражнение."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data or ""
+    parts = data.split(":", 2)
+    uuid = parts[2] if len(parts) == 3 else ""
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "Удалять упражнения можно только в режиме Gym-Stat.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "🔐 Авторизуйтесь через /login, чтобы управлять упражнениями.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    try:
+        response = await api_delete_exercise(token, uuid)
+    except httpx.RequestError as exc:
+        logger.error("Ошибка удаления упражнения %s: %s", uuid, exc)
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Не удалось удалить упражнение. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if response.status_code not in (200, 204):
+        logger.warning(
+            "Gym-Stat вернул ошибку при удалении упражнения (%s): %s",
+            response.status_code,
+            response.text,
+        )
+        await query.message.edit_text(
+            _EXERCISES_INTRO + "❌ Не удалось удалить упражнение. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=get_exercises_menu(),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    exercises = await _fetch_exercises(context, user_id, token) or []
+
+    await query.message.edit_text(
+        (
+            _EXERCISES_INTRO
+            + "Упражнение успешно удалено. Вы можете создать новое или выбрать другое из списка."
+        ),
+        parse_mode="HTML",
+        reply_markup=build_exercises_keyboard(exercises),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
 
 
 async def show_exercise_groups(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

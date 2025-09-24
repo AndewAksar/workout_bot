@@ -146,3 +146,31 @@ async def delete_exercise_group(token: str, uuid: str) -> httpx.Response:
     """Удаление группы упражнений."""
     endpoint = f"/api/ex-groups/{uuid}"
     return await _request("DELETE", endpoint, token=token)
+
+
+async def get_exercises(token: str) -> httpx.Response:
+    """Получение списка упражнений пользователя."""
+    return await _request("GET", "/api/exercises", token=token)
+
+
+async def get_exercise(token: str, uuid: str) -> httpx.Response:
+    """Получение сведений об упражнении по UUID."""
+    endpoint = f"/api/exercises/{uuid}"
+    return await _request("GET", endpoint, token=token)
+
+
+async def create_exercise(token: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Создание нового упражнения."""
+    return await _request("POST", "/api/exercises", token=token, json=payload)
+
+
+async def update_exercise(token: str, uuid: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Обновление существующего упражнения."""
+    endpoint = f"/api/exercises/{uuid}"
+    return await _request("PATCH", endpoint, token=token, json=payload)
+
+
+async def delete_exercise(token: str, uuid: str) -> httpx.Response:
+    """Удаление упражнения."""
+    endpoint = f"/api/exercises/{uuid}"
+    return await _request("DELETE", endpoint, token=token)

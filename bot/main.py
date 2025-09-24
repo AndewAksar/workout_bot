@@ -55,9 +55,23 @@ from bot.handlers.misc_handlers import (
 )
 from bot.handlers.exercises import (
     show_exercises_menu,
-    show_exercises_placeholder,
+    show_exercises,
     show_exercise_groups,
     show_exercise_group_details,
+    show_exercise_details,
+    prompt_create_exercise,
+    handle_exercise_name_input,
+    handle_exercise_description_input,
+    handle_exercise_group_selection,
+    handle_exercise_creation_cancel,
+    prompt_rename_exercise,
+    handle_exercise_rename_input,
+    prompt_change_exercise_description,
+    handle_exercise_description_update,
+    prompt_change_exercise_group,
+    handle_exercise_group_update_selection,
+    ask_delete_exercise,
+    delete_exercise,
     prompt_create_exercise_group,
     handle_exercise_group_name_input,
     handle_exercise_group_description_input,
@@ -93,6 +107,10 @@ from bot.config.settings import (
     EXERCISE_GROUP_SET_DESCRIPTION,
     EXERCISE_GROUP_RENAME,
     EXERCISE_GROUP_UPDATE_DESCRIPTION,
+    EXERCISE_SET_NAME,
+    EXERCISE_SET_DESCRIPTION,
+    EXERCISE_RENAME,
+    EXERCISE_UPDATE_DESCRIPTION,
 )
 from bot.ai_assistant.ai_handler import (
     choose_ai_model,
@@ -158,7 +176,47 @@ def main() -> None:
                 show_exercises_menu,
                 pattern='^(my_trainings|exercises_menu)$'
             ),
-            CallbackQueryHandler(show_exercises_placeholder, pattern='^exercise_list$'),
+            CallbackQueryHandler(show_exercises, pattern='^exercise_list$'),
+            CallbackQueryHandler(
+                show_exercise_details,
+                pattern='^exercise:view:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                prompt_create_exercise,
+                pattern='^exercise:create$'
+            ),
+            CallbackQueryHandler(
+                handle_exercise_group_selection,
+                pattern='^exercise:select_group:create:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                handle_exercise_creation_cancel,
+                pattern='^exercise:create:cancel$'
+            ),
+            CallbackQueryHandler(
+                prompt_rename_exercise,
+                pattern='^exercise:rename:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                prompt_change_exercise_description,
+                pattern='^exercise:description:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                prompt_change_exercise_group,
+                pattern='^exercise:change_group:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                handle_exercise_group_update_selection,
+                pattern='^exercise:select_group:update:[^:]+:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                ask_delete_exercise,
+                pattern='^exercise:ask_delete:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                delete_exercise,
+                pattern='^exercise:delete:[^:]+$'
+            ),
             CallbackQueryHandler(show_exercise_groups, pattern='^exercise_groups$'),
             CallbackQueryHandler(
                 show_exercise_group_details,
@@ -232,6 +290,24 @@ def main() -> None:
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     handle_exercise_group_description_update
+                )
+            ],
+            EXERCISE_SET_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_exercise_name_input)
+            ],
+            EXERCISE_SET_DESCRIPTION: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handle_exercise_description_input
+                )
+            ],
+            EXERCISE_RENAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_exercise_rename_input)
+            ],
+            EXERCISE_UPDATE_DESCRIPTION: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handle_exercise_description_update
                 )
             ],
             AI_CONSULTATION: [
