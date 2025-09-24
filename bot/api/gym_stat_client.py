@@ -124,3 +124,25 @@ async def delete_body_params(token: str, uuid: str) -> httpx.Response:
     """Удаление записи параметров обмеров тела."""
     endpoint = f"/api/body-params/{uuid}"
     return await _request("DELETE", endpoint, token=token)
+
+
+async def get_exercise_groups(token: str) -> httpx.Response:
+    """Получение списка групп упражнений пользователя."""
+    return await _request("GET", "/api/ex-groups", token=token)
+
+
+async def create_exercise_group(token: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Создание новой группы упражнений."""
+    return await _request("POST", "/api/ex-groups", token=token, json=payload)
+
+
+async def update_exercise_group(token: str, uuid: str, payload: Dict[str, Any]) -> httpx.Response:
+    """Обновление существующей группы упражнений."""
+    endpoint = f"/api/ex-groups/{uuid}"
+    return await _request("PATCH", endpoint, token=token, json=payload)
+
+
+async def delete_exercise_group(token: str, uuid: str) -> httpx.Response:
+    """Удаление группы упражнений."""
+    endpoint = f"/api/ex-groups/{uuid}"
+    return await _request("DELETE", endpoint, token=token)

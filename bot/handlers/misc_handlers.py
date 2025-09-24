@@ -17,12 +17,10 @@ import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from bot.api.gym_stat_client import get_trainings as api_get_trainings
 from bot.keyboards.main_menu import get_main_menu
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.keyboards.training_settings_menu import get_training_settings_menu
-from bot.utils.api_session import get_valid_access_token
 from bot.utils.db_utils import get_user_mode
 from bot.utils.logger import setup_logging
 from bot.config.settings import DB_PATH
@@ -51,83 +49,6 @@ async def start_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         parse_mode="HTML",
         reply_markup=get_main_menu(mode=mode)
     )
-    context.user_data['conversation_active'] = False
-    return ConversationHandler.END
-
-async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Отображает список тренировок пользователя."""
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    logger.info(f"Пользователь {user_id} запросил список тренировок")
-
-    mode = await get_user_mode(user_id)
-
-    if mode == 'api':
-        token = await get_valid_access_token(user_id)
-        if not token:
-            await query.message.edit_text(
-                (
-                    f"🔐 История тренировок хранится на Gym-Stat."
-                    f"Выполните /login или нажмите «Войти», чтобы подтянуть"
-                    f"занятия с сервера. После авторизации повторно нажмите"
-                    f" «🗂️ Мои упражнения»."
-                ),
-                parse_mode="HTML",
-                reply_markup=get_main_menu(mode=mode),
-            )
-            context.user_data['conversation_active'] = False
-            return ConversationHandler.END
-        resp = await api_get_trainings(token)
-        if resp.status_code == 200:
-            trainings = resp.json() or []
-            if trainings:
-                lines = [
-                    "🗂️ <b>Ваши тренировки с Gym-Stat</b>",
-                    "Каждая строка — дата и количество записанных упражнений."
-                ]
-                for training in trainings:
-                    lines.append(
-                        f"📅 {training.get('date')}: {len(training.get('exercises', []))} упражнений"
-                    )
-                lines.append(
-                    "\nℹ️ Раскройте подробности на сайте Gym-Stat или ведите"
-                    " заметки прямо в этом чате после каждой тренировки."
-                )
-                text = "\n".join(lines)
-            else:
-                text = (
-                    "📭 Пока нет зарегистрированных тренировок."
-                    " Нажмите «🏋️‍♂️ Начать тренировку», чтобы создать заметку,"
-                    " а на сайте Gym-Stat добавьте подробности — после"
-                    " синхронизации они появятся здесь."
-                )
-            await query.message.edit_text(
-                text,
-                parse_mode="HTML",
-                reply_markup=get_main_menu(mode=mode)
-            )
-        else:
-            await query.message.edit_text(
-                (
-                    "❌ Не удалось получить список тренировок. Это может"
-                    " быть временной ошибкой сервера. Попробуйте чуть позже"
-                    " или проверьте, авторизованы ли вы через /login."
-                ),
-                parse_mode="HTML",
-                reply_markup=get_main_menu(mode=mode)
-            )
-    else:
-        await query.message.edit_text(
-            (
-                "🗂️ В локальном режиме тренировки можно фиксировать сообщениями"
-                " вручную. После нажатия «🏋️‍♂️ Начать тренировку» опишите"
-                " упражнение, время или ощущения. Когда появится автоматический"
-                " журнал, все заметки будут переноситься сюда."
-            ),
-            parse_mode="HTML",
-            reply_markup=get_main_menu(mode=mode),
-        )
     context.user_data['conversation_active'] = False
     return ConversationHandler.END
 
