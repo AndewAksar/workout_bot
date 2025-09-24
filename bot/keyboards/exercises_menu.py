@@ -109,7 +109,7 @@ def get_exercise_group_delete_keyboard(uuid: str) -> InlineKeyboardMarkup:
 def build_exercise_group_selection_keyboard(groups: Iterable[dict]) -> InlineKeyboardMarkup:
     """Клавиатура выбора группы при создании упражнения."""
     keyboard: list[list[InlineKeyboardButton]] = []
-    for group in groups:
+    for index, group in enumerate(groups):
         if not isinstance(group, dict):
             continue
         uuid = group.get("uuid")
@@ -119,7 +119,7 @@ def build_exercise_group_selection_keyboard(groups: Iterable[dict]) -> InlineKey
         keyboard.append(
             [
                 InlineKeyboardButton(
-                    _shorten(str(name)), callback_data=f"exercise:select_group:create:{uuid}"
+                    _shorten(str(name)), callback_data=f"ex:sgc:{index}"
                 )
             ]
         )
@@ -132,7 +132,7 @@ def build_exercise_group_update_keyboard(
 ) -> InlineKeyboardMarkup:
     """Клавиатура выбора группы при изменении упражнения."""
     keyboard: list[list[InlineKeyboardButton]] = []
-    for group in groups:
+    for index, group in enumerate(groups):
         if not isinstance(group, dict):
             continue
         group_uuid = group.get("uuid")
@@ -142,8 +142,7 @@ def build_exercise_group_update_keyboard(
         keyboard.append(
             [
                 InlineKeyboardButton(
-                    _shorten(str(name)),
-                    callback_data=f"exercise:select_group:update:{exercise_uuid}:{group_uuid}",
+                    _shorten(str(name)), callback_data=f"ex:sgu:{index}"
                 )
             ]
         )

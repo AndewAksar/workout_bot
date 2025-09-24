@@ -58,6 +58,8 @@ _EXERCISE_PROMPT_KEY = "exercise_prompt"
 _EXERCISE_DRAFT_KEY = "exercise_draft"
 _EXERCISE_UUID_KEY = "exercise_uuid"
 _EXERCISE_CACHE_KEY = "exercises_cache"
+_EXERCISE_GROUP_CHOICES_KEY = "exercise_group_choices"
+_EXERCISE_GROUP_UPDATE_CHOICES_KEY = "exercise_group_update_choices"
 
 
 _DESCRIPTION_INTRO = (
@@ -166,7 +168,13 @@ def _reset_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def _reset_exercise_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Удаляет временные данные, связанные с управлением упражнениями."""
-    for key in (_EXERCISE_PROMPT_KEY, _EXERCISE_DRAFT_KEY, _EXERCISE_UUID_KEY):
+    for key in (
+        _EXERCISE_PROMPT_KEY,
+        _EXERCISE_DRAFT_KEY,
+        _EXERCISE_UUID_KEY,
+        _EXERCISE_GROUP_CHOICES_KEY,
+        _EXERCISE_GROUP_UPDATE_CHOICES_KEY,
+    ):
         context.user_data.pop(key, None)
 
 
@@ -638,6 +646,12 @@ async def handle_exercise_description_input(
             context.user_data["conversation_active"] = False
             return ConversationHandler.END
 
+    context.user_data[_EXERCISE_GROUP_CHOICES_KEY] = {
+        str(index): group.get("uuid")
+        for index, group in enumerate(groups)
+        if isinstance(group, dict) and group.get("uuid")
+    }
+
     prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
     text = (
         "📂 <b>Выберите группу для упражнения</b>\n"
@@ -669,8 +683,13 @@ async def handle_exercise_group_selection(update: Update, context: ContextTypes.
     await query.answer()
     user_id = query.from_user.id
     data = query.data or ""
-    parts = data.split(":", 3)
-    group_uuid = parts[3] if len(parts) == 4 else ""
+    if data.startswith("exercise:select_group:create:"):
+        group_uuid = data.rsplit(":", 1)[-1]
+    else:
+        parts = data.split(":", 2)
+        choice_key = parts[2] if len(parts) >= 3 else ""
+        choices = context.user_data.get(_EXERCISE_GROUP_CHOICES_KEY, {}) or {}
+        group_uuid = choices.get(choice_key, "")
 
     draft = context.user_data.get(_EXERCISE_DRAFT_KEY)
     name = draft.get("name") if isinstance(draft, dict) else None
@@ -859,6 +878,11 @@ async def prompt_rename_exercise(update: Update, context: ContextTypes.DEFAULT_T
 
     context.user_data[_EXERCISE_UUID_KEY] = uuid
     context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
+    context.user_data[_EXERCISE_GROUP_UPDATE_CHOICES_KEY] = {
+        str(index): group.get("uuid")
+        for index, group in enumerate(groups)
+        if isinstance(group, dict) and group.get("uuid")
+    }
 
     await query.message.edit_text(
         (
@@ -1129,6 +1153,11 @@ async def prompt_change_exercise_group(update: Update, context: ContextTypes.DEF
 
     context.user_data[_EXERCISE_UUID_KEY] = uuid
     context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
+    context.user_data[_EXERCISE_GROUP_UPDATE_CHOICES_KEY] = {
+        str(index): group.get("uuid")
+        for index, group in enumerate(groups)
+        if isinstance(group, dict) and group.get("uuid")
+    }
 
     await query.message.edit_text(
         (
@@ -1150,9 +1179,16 @@ async def handle_exercise_group_update_selection(
     await query.answer()
     user_id = query.from_user.id
     data = query.data or ""
-    parts = data.split(":", 4)
-    exercise_uuid = parts[3] if len(parts) >= 4 else ""
-    group_uuid = parts[4] if len(parts) >= 5 else ""
+    if data.startswith("exercise:select_group:update:"):
+        parts = data.split(":", 4)
+        exercise_uuid = parts[3] if len(parts) >= 4 else ""
+        group_uuid = parts[4] if len(parts) >= 5 else ""
+    else:
+        parts = data.split(":", 2)
+        choice_key = parts[2] if len(parts) >= 3 else ""
+        exercise_uuid = context.user_data.get(_EXERCISE_UUID_KEY, "")
+        update_choices = context.user_data.get(_EXERCISE_GROUP_UPDATE_CHOICES_KEY, {}) or {}
+        group_uuid = update_choices.get(choice_key, "")
 
     if not exercise_uuid or not group_uuid:
         await query.message.edit_text(
