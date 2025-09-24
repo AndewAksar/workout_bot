@@ -586,8 +586,8 @@ async def prompt_body_param(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     message = query.message
     if message:
-        await message.edit_text("\n".join(prompt_lines), parse_mode="HTML")
-        context.user_data["body_params_message"] = (message.chat_id, message.message_id)
+        prompt_message = await message.reply_text("\n".join(prompt_lines), parse_mode="HTML")
+        context.user_data["body_params_prompt_message"] = (prompt_message.chat_id, prompt_message.message_id)
 
     return SET_BODY_PARAM
 
@@ -653,13 +653,19 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
     message_info = context.user_data.get("body_params_message")
     card_chat_id, card_message_id = (message_info or (chat_id, None))
 
+    prompt_info = context.user_data.get("body_params_prompt_message")
+    prompt_chat_id, prompt_message_id = prompt_info or (chat_id, None)
+
     raw_text = (message.text or "").strip()
 
     async def _abort_with_error(text: str, status: str) -> int:
         reply = await message.reply_text(text)
+        messages_to_delete = [user_message_id, reply.message_id]
+        if prompt_message_id:
+            messages_to_delete.append(prompt_message_id)
         schedule_message_deletion(
             context,
-            [user_message_id, reply.message_id],
+            messages_to_delete,
             chat_id,
             delay=10,
         )
@@ -674,6 +680,7 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
         context.user_data["conversation_active"] = False
         context.user_data.pop("pending_body_param", None)
         context.user_data.pop("current_state", None)
+        context.user_data.pop("body_params_prompt_message", None)
         return ConversationHandler.END
 
     if param_key == "date":
@@ -724,10 +731,14 @@ async def handle_body_param_input(update: Update, context: ContextTypes.DEFAULT_
         skip_fetch=True,
     )
 
-    schedule_message_deletion(context, [user_message_id], chat_id, delay=5)
+    messages_to_delete = [user_message_id]
+    if prompt_message_id:
+        messages_to_delete.append(prompt_message_id)
+    schedule_message_deletion(context, messages_to_delete, chat_id, delay=5)
     context.user_data["conversation_active"] = False
     context.user_data.pop("pending_body_param", None)
     context.user_data.pop("current_state", None)
+    context.user_data.pop("body_params_prompt_message", None)
 
     return ConversationHandler.END
 
@@ -858,11 +869,18 @@ async def cancel_body_param_input(update: Update, context: ContextTypes.DEFAULT_
     chat_id = message.chat_id
     user_id = message.from_user.id
 
-    schedule_message_deletion(context, [message.message_id], chat_id, delay=5)
+    prompt_info = context.user_data.get("body_params_prompt_message")
+    prompt_chat_id, prompt_message_id = prompt_info or (chat_id, None)
+
+    messages_to_delete = [message.message_id]
+    if prompt_message_id:
+        messages_to_delete.append(prompt_message_id)
+    schedule_message_deletion(context, messages_to_delete, chat_id, delay=5)
 
     context.user_data.pop("pending_body_param", None)
     context.user_data.pop("current_state", None)
     context.user_data["conversation_active"] = False
+    context.user_data.pop("body_params_prompt_message", None)
 
     message_info = context.user_data.get("body_params_message")
     card_chat_id, card_message_id = (message_info or (chat_id, None))

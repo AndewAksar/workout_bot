@@ -68,10 +68,10 @@ async def show_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if not token:
             await query.message.edit_text(
                 (
-                    "🔐 История тренировок хранится на Gym-Stat.\n"
-                    "Выполните /login или нажмите «Войти», чтобы подтянуть"
-                    " занятия с сервера. После авторизации повторно нажмите"
-                    " «🗂️ Мои тренировки»."
+                    f"🔐 История тренировок хранится на Gym-Stat."
+                    f"Выполните /login или нажмите «Войти», чтобы подтянуть"
+                    f"занятия с сервера. После авторизации повторно нажмите"
+                    f" «🗂️ Мои упражнения»."
                 ),
                 parse_mode="HTML",
                 reply_markup=get_main_menu(mode=mode),

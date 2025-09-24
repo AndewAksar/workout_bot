@@ -110,6 +110,8 @@ from bot.handlers.api_auth import (
     start_login,
     login_login,
     login_password,
+    restart_registration_dialog,
+    restart_login_dialog,
     cancel as auth_cancel,
     REG_LOGIN,
     REG_EMAIL,
@@ -211,10 +213,26 @@ def main() -> None:
             CallbackQueryHandler(start_registration, pattern='^register$'),
         ],
         states={
-            REG_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_login)],  # ввод логина
-            REG_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_email)],  # ввод email
-            REG_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_password)],  # ввод пароля
-            REG_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_confirm)],  # подтверждение
+            REG_LOGIN: [
+                CommandHandler("register", restart_registration_dialog),
+                CallbackQueryHandler(restart_registration_dialog, pattern='^register$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_login),  # ввод логина
+            ],
+            REG_EMAIL: [
+                CommandHandler("register", restart_registration_dialog),
+                CallbackQueryHandler(restart_registration_dialog, pattern='^register$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_email),  # ввод email
+            ],
+            REG_PASSWORD: [
+                CommandHandler("register", restart_registration_dialog),
+                CallbackQueryHandler(restart_registration_dialog, pattern='^register$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_password),  # ввод пароля
+            ],
+            REG_CONFIRM: [
+                CommandHandler("register", restart_registration_dialog),
+                CallbackQueryHandler(restart_registration_dialog, pattern='^register$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_confirm),  # подтверждение
+            ],
         },
         fallbacks=[CommandHandler("cancel", auth_cancel)],
         per_chat=True,
@@ -226,8 +244,16 @@ def main() -> None:
             CallbackQueryHandler(start_login, pattern='^login$'),
         ],
         states={
-            LOGIN_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_login)],
-            LOGIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
+            LOGIN_LOGIN: [
+                CommandHandler("login", restart_login_dialog),
+                CallbackQueryHandler(restart_login_dialog, pattern='^login$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, login_login),
+            ],
+            LOGIN_PASSWORD: [
+                CommandHandler("login", restart_login_dialog),
+                CallbackQueryHandler(restart_login_dialog, pattern='^login$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, login_password),
+            ],
         },
         fallbacks=[CommandHandler("cancel", auth_cancel)],
         per_chat=True,

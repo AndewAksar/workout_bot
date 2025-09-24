@@ -33,7 +33,7 @@ def get_main_menu(mode: str = "local"):
     keyboard = [
         [
             InlineKeyboardButton("🏋️‍♂️ Начать тренировку", callback_data='start_training'),
-            InlineKeyboardButton("🗂️ Мои тренировки", callback_data='my_trainings')
+            InlineKeyboardButton("🗂️ Мои упражнения", callback_data='my_trainings')
         ],
         [
             InlineKeyboardButton("🔄 Сменить режим", callback_data='switch_mode'),

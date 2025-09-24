@@ -54,12 +54,33 @@ LOGIN_BUTTON_MARKUP = InlineKeyboardMarkup([
 ])
 
 
+AUTH_CONTEXT_KEYS = (
+    "reg_login",
+    "reg_email",
+    "reg_password",
+    "login_login",
+    "login_attempts",
+)
+
+def _clear_auth_context(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Удаляет временные данные диалога авторизации и сбрасывает флаги активности."""
+
+    for key in AUTH_CONTEXT_KEYS:
+        context.user_data.pop(key, None)
+    context.user_data.pop("auth_conversation_active", None)
+    context.user_data["conversation_active"] = False
+
+
 def _valid_email(email: str) -> bool:
     return re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", email) is not None
 
 
 async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начало диалога регистрации (как по команде, так и по кнопке)."""
+
+    context.user_data["auth_conversation_active"] = True
+    context.user_data["conversation_active"] = True
+
     if update.callback_query:
         query = update.callback_query
         await query.answer()
@@ -83,7 +104,21 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return REG_LOGIN
 
 
+async def restart_registration_dialog(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    """Позволяет перезапустить ввод регистрационных данных без выхода из диалога."""
+    _clear_auth_context(context)
+    logger.info(
+        "Пользователь %s перезапустил диалог регистрации.",
+        getattr(update.effective_user, "id", "unknown"),
+    )
+    return await start_registration(update, context)
+
+
 async def reg_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
     """Получение логина пользователя."""
     login = update.message.text.strip()
     schedule_message_deletion(
@@ -237,11 +272,16 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             chat_id=sent_message.chat_id,
             delay=15,
         )
+
+    _clear_auth_context(context)
     return ConversationHandler.END
 
 
 async def start_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начало диалога авторизации (поддерживает кнопку и команду)."""
+
+    context.user_data["auth_conversation_active"] = True
+    context.user_data["conversation_active"] = True
     if update.callback_query:
         query = update.callback_query
         await query.answer()
@@ -263,6 +303,19 @@ async def start_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         delay=15,
     )
     return LOGIN_LOGIN
+
+
+async def restart_login_dialog(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    """Позволяет перезапустить ввод данных авторизации без выхода из диалога."""
+    _clear_auth_context(context)
+    logger.info(
+        "Пользователь %s перезапустил диалог авторизации.",
+        getattr(update.effective_user, "id", "unknown"),
+    )
+    return await start_login(update, context)
 
 
 async def login_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -320,6 +373,7 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 chat_id=sent_message.chat_id,
                 delay=15,
             )
+            _clear_auth_context(context)
             return ConversationHandler.END
         if not refresh:
             logger.warning("Сервер не вернул refresh_token: %s", data)
@@ -445,10 +499,13 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=get_main_menu(mode="api"),
         )
 
+        _clear_auth_context(context)
         return ConversationHandler.END
 
     if resp.status_code == 401 and context.user_data["login_attempts"] < 3:
-        sent_message = await update.message.reply_text("❌ Неверные данные. Попробуйте снова:")
+        sent_message = await update.message.reply_text(
+            "❌ Неверные данные. Повторите пароль или отправьте /login, чтобы начать заново."
+        )
         schedule_message_deletion(
             context,
             [sent_message.message_id],
@@ -473,6 +530,8 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             chat_id=sent_message.chat_id,
             delay=15,
         )
+
+    _clear_auth_context(context)
     return ConversationHandler.END
 
 
@@ -497,14 +556,19 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.error(f"Не удалось получить режим пользователя {user_id}: {mode_error}")
 
     try:
-        is_conversation_active = context.user_data.get("conversation_active", False)
+        is_conversation_active = (
+                context.user_data.get("auth_conversation_active", False)
+                or context.user_data.get("conversation_active", False)
+        )
         message_ids = [message_id]
+
+        _clear_auth_context(context)
 
         context.user_data.clear()
 
         if is_conversation_active:
-            message_text = "❌ Действие отменено."
-            reply_markup = get_main_menu(mode=mode)
+            message_text = "❌ Действие отменено! Диалог завершен."
+            reply_markup = None
             logger.info(f"Пользователь {user_id} отменил активный диалог.")
 
         else:
@@ -520,29 +584,28 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             parse_mode="HTML",
         )
 
-        if not is_conversation_active:
-            message_ids.append(sent_message.message_id)
+        message_ids.append(sent_message.message_id)
 
         schedule_message_deletion(
             context,
             message_ids,
             chat_id=chat_id,
-            delay=5,
+            delay=15,
         )
 
     except Exception as error:
         logger.error(f"Ошибка при обработке команды /cancel: {error}")
         try:
             await message.reply_text(
-                "❌ Произошла ошибка при отмене. Возвращаемся в главное меню.",
-                reply_markup=get_main_menu(mode=mode),
+                "❌ Произошла ошибка при отмене. Вернитесь в главное меню.",
+                reply_markup = None,
                 parse_mode="HTML",
             )
             schedule_message_deletion(
                 context,
                 [message_id],
                 chat_id=chat_id,
-                delay=5,
+                delay=15,
             )
         except Exception as error_inner:
             logger.error(
@@ -554,3 +617,5 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.debug(
         f"Состояние после /cancel для пользователя {user_id}: {context.user_data}"
     )
+
+    return ConversationHandler.END
