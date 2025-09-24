@@ -76,14 +76,20 @@ str: Путь к файлу базы данных, используемой бо
     EXERCISE_GROUP_SET_DESCRIPTION,
     EXERCISE_GROUP_RENAME,
     EXERCISE_GROUP_UPDATE_DESCRIPTION,
-) = range(11)
+    EXERCISE_SET_NAME,
+    EXERCISE_SET_DESCRIPTION,
+    EXERCISE_RENAME,
+    EXERCISE_UPDATE_DESCRIPTION,
+) = range(15)
 """
 Константы состояний ConversationHandler:
 - SET_NAME, SET_AGE, SET_WEIGHT, SET_HEIGHT, SET_GENDER — ввод персональных данных;
 - AI_CONSULTATION — диалог с AI-консультантом;
 - SET_BODY_PARAM — ввод параметров тела;
 - EXERCISE_GROUP_SET_NAME, EXERCISE_GROUP_SET_DESCRIPTION — создание группы упражнений;
-- EXERCISE_GROUP_RENAME, EXERCISE_GROUP_UPDATE_DESCRIPTION — редактирование группы упражнений.
+- EXERCISE_GROUP_RENAME, EXERCISE_GROUP_UPDATE_DESCRIPTION — редактирование группы упражнений;
+- EXERCISE_SET_NAME, EXERCISE_SET_DESCRIPTION — создание упражнения;
+- EXERCISE_RENAME, EXERCISE_UPDATE_DESCRIPTION — редактирование упражнения.
 """
 
 # Список допустимых команд бота.
