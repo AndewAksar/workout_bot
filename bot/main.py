@@ -187,7 +187,7 @@ def main() -> None:
             ),
             CallbackQueryHandler(
                 handle_exercise_group_selection,
-                pattern='^exercise:select_group:create:[^:]+$'
+                pattern='^(exercise:select_group:create:[^:]+|ex:sgc:[0-9]+)$'
             ),
             CallbackQueryHandler(
                 handle_exercise_creation_cancel,
@@ -207,7 +207,7 @@ def main() -> None:
             ),
             CallbackQueryHandler(
                 handle_exercise_group_update_selection,
-                pattern='^exercise:select_group:update:[^:]+:[^:]+$'
+                pattern='^(exercise:select_group:update:[^:]+:[^:]+|ex:sgu:[0-9]+)$'
             ),
             CallbackQueryHandler(
                 ask_delete_exercise,
