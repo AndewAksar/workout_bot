@@ -783,12 +783,12 @@ def _prepare_payload(draft: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if counts.get("type"):
             count_entry["type"] = counts["type"]
 
-    prepared_sets.append(
-        {
-            "exerciseId": exercise_id,
-            "counts": [count_entry],
-        }
-    )
+        prepared_sets.append(
+            {
+                "exerciseId": exercise_id,
+                "counts": [count_entry],
+            }
+        )
 
     payload = {
         "name": name,
