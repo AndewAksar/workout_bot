@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import html
 from datetime import datetime, time, timezone
 from typing import Any, Dict, Iterable, Optional
-
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.api.gym_stat_client import (
     create_workout as api_create_workout,
+    delete_workout as api_delete_workout,
     get_exercises as api_get_exercises,
     get_workout as api_get_workout,
     get_workouts as api_get_workouts,
@@ -20,6 +21,7 @@ from bot.keyboards.workouts_menu import (
     build_exercise_selection_keyboard,
     build_workouts_keyboard,
     get_workout_details_keyboard,
+    get_workout_delete_keyboard,
 )
 from bot.utils.api_session import get_valid_access_token
 from bot.utils.db_utils import get_user_mode
@@ -34,6 +36,7 @@ _WORKOUT_DRAFT_KEY = "workout_draft"
 _WORKOUT_MESSAGE_IDS_KEY = "workout_prompt_ids"
 _WORKOUT_EXERCISES_KEY = "workout_exercise_choices"
 _WORKOUT_CURRENT_SET_KEY = "workout_current_set"
+_WORKOUT_DETAILS_CACHE_KEY = "workout_details_cache"
 _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S.%f%z",
     "%Y-%m-%dT%H:%M:%S%z",
@@ -152,10 +155,166 @@ async def show_workout_details(
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
+    cache: Dict[str, Dict[str, Any]] = context.user_data.setdefault(
+        _WORKOUT_DETAILS_CACHE_KEY, {}
+    )
+    cache[uuid] = workout
+
     await query.message.edit_text(
         _format_workout_details(workout),
         parse_mode="HTML",
-        reply_markup=get_workout_details_keyboard(),
+        reply_markup=get_workout_details_keyboard(uuid),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def prompt_delete_workout(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Shows a confirmation prompt before deleting a workout."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    uuid = query.data.split(":", maxsplit=2)[-1]
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                "ℹ️ Просмотр тренировок доступен только при активной интеграции"
+                " с Gym-Stat."
+            ),
+            parse_mode="HTML",
+            reply_markup=build_workouts_keyboard([], include_create=False),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                "🔐 <b>Нужна авторизация</b>\n"
+                "Чтобы управлять тренировками, войдите в Gym-Stat через /login."
+            ),
+            parse_mode="HTML",
+            reply_markup=build_workouts_keyboard([], include_create=False),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    cache: Dict[str, Dict[str, Any]] = context.user_data.setdefault(
+        _WORKOUT_DETAILS_CACHE_KEY, {}
+    )
+    workout = cache.get(uuid)
+    if workout is None:
+        workout = await _fetch_workout(token, uuid)
+        if workout is None:
+            await query.message.edit_text(
+                (
+                    "❌ <b>Не удалось получить данные тренировки</b>\n"
+                    "Попробуйте снова открыть список тренировок."
+                ),
+                parse_mode="HTML",
+                reply_markup=build_workouts_keyboard([], include_create=True),
+            )
+            context.user_data["conversation_active"] = False
+            return ConversationHandler.END
+        cache[uuid] = workout
+
+    workout_name = html.escape(workout.get("name") or "Без названия")
+    await query.message.edit_text(
+        (
+            "❓ <b>Удалить тренировку?</b>\n"
+            f"Вы уверены, что хотите удалить «{workout_name}»?"
+        ),
+        parse_mode="HTML",
+        reply_markup=get_workout_delete_keyboard(uuid),
+    )
+    context.user_data["conversation_active"] = False
+    return ConversationHandler.END
+
+
+async def delete_workout(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Deletes a workout after user confirmation."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    uuid = query.data.split(":", maxsplit=2)[-1]
+
+    mode = await get_user_mode(user_id)
+    if mode != "api":
+        await query.message.edit_text(
+            (
+                "ℹ️ Удаление тренировок доступно только в режиме Gym-Stat."
+            ),
+            parse_mode="HTML",
+            reply_markup=build_workouts_keyboard([], include_create=False),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    token = await get_valid_access_token(user_id)
+    if not token:
+        await query.message.edit_text(
+            (
+                "🔐 <b>Нужна авторизация</b>\n"
+                "Чтобы удалять тренировки, войдите в Gym-Stat через /login."
+            ),
+            parse_mode="HTML",
+            reply_markup=build_workouts_keyboard([], include_create=False),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    cache: Dict[str, Dict[str, Any]] = context.user_data.get(
+        _WORKOUT_DETAILS_CACHE_KEY, {}
+    )
+    workout = cache.get(uuid)
+    workout_name = html.escape((workout or {}).get("name") or "Без названия")
+
+    response = await api_delete_workout(token, uuid)
+    if not 200 <= response.status_code < 300:
+        logger.error(
+            "Не удалось удалить тренировку %s: %s", uuid, response.text
+        )
+        await query.message.edit_text(
+            (
+                "❌ <b>Не удалось удалить тренировку</b>\n"
+                "Попробуйте повторить попытку чуть позже."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_workout_delete_keyboard(uuid),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    if isinstance(cache, dict):
+        cache.pop(uuid, None)
+
+    workouts = await _fetch_workouts(token)
+    if workouts is None:
+        await query.message.edit_text(
+            (
+                "✅ Тренировка удалена.\n"
+                "Не удалось обновить список, попробуйте открыть меню тренировок ещё раз."
+            ),
+            parse_mode="HTML",
+            reply_markup=build_workouts_keyboard([], include_create=True),
+        )
+        context.user_data["conversation_active"] = False
+        return ConversationHandler.END
+
+    await query.message.edit_text(
+        (
+            "🗑️ <b>Тренировка удалена</b>\n"
+            f"«{workout_name}» удалена из Gym-Stat."
+        ),
+        parse_mode="HTML",
+        reply_markup=build_workouts_keyboard(workouts),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END

@@ -95,6 +95,8 @@ from bot.handlers.workouts import (
     handle_workout_creation_input,
     handle_workout_add_set_choice,
     handle_workout_exercise_selection,
+    delete_workout,
+    prompt_delete_workout,
     show_workout_details,
     show_workouts_menu,
     start_create_workout,
@@ -192,6 +194,14 @@ def main() -> None:
             CallbackQueryHandler(
                 show_workout_details,
                 pattern='^workout:view:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                prompt_delete_workout,
+                pattern='^workout:delete_prompt:[^:]+$'
+            ),
+            CallbackQueryHandler(
+                delete_workout,
+                pattern='^workout:delete_confirm:[^:]+$'
             ),
             CallbackQueryHandler(
                 start_create_workout,

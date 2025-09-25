@@ -65,10 +65,34 @@ def build_workouts_keyboard(
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_workout_details_keyboard() -> InlineKeyboardMarkup:
+def get_workout_details_keyboard(uuid: str) -> InlineKeyboardMarkup:
     """Keyboard shown on the workout details screen."""
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🔙 К тренировкам", callback_data="workouts")]]
+        [
+            [
+                InlineKeyboardButton(
+                    "🗑️ Удалить тренировку",
+                    callback_data=f"workout:delete_prompt:{uuid}",
+                )
+            ],
+            [InlineKeyboardButton("🔙 К тренировкам", callback_data="workouts")],
+        ]
+    )
+
+
+def get_workout_delete_keyboard(uuid: str) -> InlineKeyboardMarkup:
+    """Keyboard shown when confirming workout deletion."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Да, удалить", callback_data=f"workout:delete_confirm:{uuid}"
+                ),
+                InlineKeyboardButton(
+                    "Отмена", callback_data=f"workout:view:{uuid}"
+                ),
+            ]
+        ]
     )
 
 
