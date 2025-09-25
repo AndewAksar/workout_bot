@@ -323,14 +323,11 @@ def _format_exercise_details(exercise: dict) -> str:
     name = html.escape(str(exercise.get("name") or "Без названия"))
     description_raw = str(exercise.get("description") or "—")
     description = html.escape(description_raw)
-    uuid = html.escape(str(exercise.get("uuid") or "—"))
 
     group = exercise.get("exerciseGroup") or exercise.get("group") or {}
     if not isinstance(group, dict):
         group = {}
     group_name = html.escape(str(group.get("name") or "Не выбрана"))
-    group_uuid_raw = group.get("uuid")
-    group_uuid = html.escape(str(group_uuid_raw)) if group_uuid_raw else "—"
 
     created = _format_datetime(exercise.get("createdAt") or exercise.get("created_at"))
     updated = _format_datetime(exercise.get("updatedAt") or exercise.get("updated_at"))
@@ -338,12 +335,9 @@ def _format_exercise_details(exercise: dict) -> str:
     lines = [
         f"📋 <b>{name}</b>",
         f"Описание: {description}",
-        f"UUID: <code>{uuid}</code>",
     ]
 
     group_line = f"Группа: {group_name}"
-    if group_uuid_raw:
-        group_line += f" (UUID: <code>{group_uuid}</code>)"
     lines.append(group_line)
 
     if created:

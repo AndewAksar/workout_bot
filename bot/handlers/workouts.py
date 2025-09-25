@@ -155,13 +155,15 @@ async def show_workout_details(
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
+    exercise_names = await _build_exercise_name_map(token, workout)
+
     cache: Dict[str, Dict[str, Any]] = context.user_data.setdefault(
         _WORKOUT_DETAILS_CACHE_KEY, {}
     )
     cache[uuid] = workout
 
     await query.message.edit_text(
-        _format_workout_details(workout),
+        _format_workout_details(workout, exercise_names),
         parse_mode="HTML",
         reply_markup=get_workout_details_keyboard(uuid),
     )
@@ -835,7 +837,52 @@ async def _fetch_exercises(token: str) -> Optional[list[dict[str, Any]]]:
     return None
 
 
-def _format_workout_details(workout: dict[str, Any]) -> str:
+async def _build_exercise_name_map(
+    token: str,
+    workout: dict[str, Any],
+) -> dict[str, str]:
+    """Возвращает словарь названий упражнений, используемых в тренировке."""
+
+    sets = workout.get("sets") or []
+    if not sets:
+        return {}
+
+    # Если API уже вернул вложенные данные упражнения, повторный запрос не нужен.
+    needs_lookup = False
+    for workout_set in sets:
+        if not isinstance(workout_set, dict):
+            continue
+        exercise = workout_set.get("exercise")
+        if isinstance(exercise, dict) and exercise.get("name"):
+            continue
+        exercise_id = workout_set.get("exerciseId") or workout_set.get("exercise_id")
+        if exercise_id:
+            needs_lookup = True
+            break
+
+    if not needs_lookup:
+        return {}
+
+    exercises = await _fetch_exercises(token)
+    if not exercises:
+        return {}
+
+    result: dict[str, str] = {}
+    for exercise in exercises:
+        if not isinstance(exercise, dict):
+            continue
+        exercise_uuid = exercise.get("uuid")
+        if not exercise_uuid:
+            continue
+        result[str(exercise_uuid)] = str(exercise.get("name") or "Без названия")
+
+    return result
+
+def _format_workout_details(
+    workout: dict[str, Any],
+    exercise_names: dict[str, str] | None = None,
+) -> str:
+    exercise_names = exercise_names or {}
     name = workout.get("name") or "Без названия"
     description = workout.get("description") or "—"
     date_value = workout.get("date")
@@ -857,9 +904,9 @@ def _format_workout_details(workout: dict[str, Any]) -> str:
     if sets:
         parts.append("\n<b>Подходы:</b>")
         for idx, workout_set in enumerate(sets, start=1):
-            exercise_id = workout_set.get("exerciseId") or "—"
+            exercise_label = _format_exercise_label(workout_set, exercise_names)
             counts = workout_set.get("counts") or []
-            parts.append(f"{idx}. Упражнение: {exercise_id}")
+            parts.append(f"{idx}. Упражнение: {exercise_label}")
             for count_idx, count in enumerate(counts, start=1):
                 reps = count.get("reps")
                 weight = count.get("weight")
@@ -872,6 +919,28 @@ def _format_workout_details(workout: dict[str, Any]) -> str:
         parts.append("\nПодходы ещё не добавлены.")
 
     return "\n".join(parts)
+
+
+def _format_exercise_label(
+    workout_set: dict[str, Any],
+    exercise_names: dict[str, str],
+) -> str:
+    exercise = workout_set.get("exercise")
+    if isinstance(exercise, dict):
+        exercise_name = exercise.get("name")
+        if exercise_name:
+            return html.escape(str(exercise_name))
+
+    exercise_id = workout_set.get("exerciseId") or workout_set.get("exercise_id")
+    if exercise_id is None:
+        return "—"
+
+    exercise_id_str = str(exercise_id)
+    mapped_name = exercise_names.get(exercise_id_str)
+    if mapped_name:
+        return html.escape(mapped_name)
+
+    return html.escape(exercise_id_str)
 
 
 def _parse_user_date(value: str) -> Optional[str]:
