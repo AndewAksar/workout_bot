@@ -32,15 +32,17 @@ def get_main_menu(mode: str = "local"):
     """
     keyboard = [
         [
-            InlineKeyboardButton("🏋️‍♂️ Начать тренировку", callback_data='start_training'),
-            InlineKeyboardButton("🗂️ Тренировки", callback_data='workouts')
+
+            InlineKeyboardButton("🤖 AI-консультант", callback_data='my_ai_assistant')
         ],
         [
             InlineKeyboardButton("📋 Упражнения", callback_data='exercises_menu'),
-            InlineKeyboardButton("🔄 Сменить режим", callback_data='switch_mode')
+            InlineKeyboardButton("🗂️ Тренировки", callback_data='workouts'),
+
         ],
         [
-            InlineKeyboardButton("🤖 AI-консультант", callback_data='my_ai_assistant'),
+
+            InlineKeyboardButton("🔄 Сменить режим", callback_data='switch_mode'),
             InlineKeyboardButton("⚙️ Настройки", callback_data='settings')
         ]
     ]

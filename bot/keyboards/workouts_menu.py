@@ -59,11 +59,6 @@ def build_workouts_keyboard(
             InlineKeyboardButton("➕ Создать тренировку", callback_data="workout:create"),
         ])
 
-    if include_exercises:
-        keyboard.append([
-            InlineKeyboardButton("📋 Упражнения", callback_data="exercises_menu"),
-        ])
-
     keyboard.append([
         InlineKeyboardButton("🔙 Назад", callback_data="main_menu"),
     ])
