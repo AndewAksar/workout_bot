@@ -1,7 +1,8 @@
-"""Handlers responsible for managing workouts via Gym-Stat API."""
+"""Обработчики, ответственные за управление тренировками через API Gym-Stat."""
+
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import datetime, time, timezone  ### ИЗМЕНЕНО: Добавлен import timezone
 from typing import Any, Dict, Iterable, Optional
 
 from telegram import Update
@@ -248,7 +249,7 @@ async def handle_workout_creation_input(
         message = await update.message.reply_text(
             (
                 "📅 <b>Укажите дату тренировки</b> в формате"
-                " <code>дд-мм-гггг</code>."
+                " <code>гггг-мм-дд</code>."
             ),
             parse_mode="HTML",
         )
@@ -259,7 +260,7 @@ async def handle_workout_creation_input(
         parsed_date = _parse_user_date(text)
         if not parsed_date:
             message = await update.message.reply_text(
-                "⚠️ Неверный формат даты. Используйте <code>дд-мм-гггг</code>.",
+                "⚠️ Неверный формат даты. Используйте <code>гггг-мм-дд</code>.",
                 parse_mode="HTML",
             )
             _remember_prompt(context, message.message_id, chat_id)
@@ -552,12 +553,18 @@ def _format_workout_details(workout: dict[str, Any]) -> str:
 
 
 def _parse_user_date(value: str) -> Optional[str]:
+    ### ИЗМЕНЕНО: Добавлено принудительное включение .000 и Z для полного ISO-8601
     try:
-        parsed = datetime.strptime(value, "%d-%m-%Y")
+        parsed = datetime.strptime(value, "%Y-%m-%d")
     except ValueError:
         return None
-    result = datetime.combine(parsed.date(), time.min)
-    return result.isoformat(sep=" ")
+    current_time = datetime.now().time().replace(microsecond=0)  # Сбрасываем микросекунды для .000
+    result = datetime.combine(parsed.date(), current_time)
+    result = result.replace(tzinfo=timezone.utc)
+    iso = result.isoformat()
+    if '.' not in iso:
+        iso = iso[:-6] + '.000' + iso[-6:]
+    return iso.replace('+00:00', 'Z')  # Возвращает 'YYYY-MM-DDTHH:MM:SS.000Z'
 
 
 def _parse_number(value: str) -> Optional[float]:
