@@ -93,6 +93,7 @@ from bot.handlers.body_params import (
 )
 from bot.handlers.workouts import (
     handle_workout_creation_input,
+    handle_workout_add_set_choice,
     handle_workout_exercise_selection,
     show_workout_details,
     show_workouts_menu,
@@ -334,6 +335,10 @@ def main() -> None:
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     handle_workout_creation_input,
+                ),
+                CallbackQueryHandler(
+                    handle_workout_add_set_choice,
+                    pattern='^workout:add_set:(yes|no)$'
                 ),
                 CallbackQueryHandler(
                     handle_workout_exercise_selection,

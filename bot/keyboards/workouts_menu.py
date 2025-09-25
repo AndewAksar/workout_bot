@@ -72,6 +72,18 @@ def get_workout_details_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def build_add_set_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard that prompts the user to add another workout set."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Да", callback_data="workout:add_set:yes"),
+                InlineKeyboardButton("Нет", callback_data="workout:add_set:no"),
+            ]
+        ]
+    )
+
+
 def build_exercise_selection_keyboard(exercises: Iterable[dict]) -> InlineKeyboardMarkup:
     """Keyboard that allows choosing an exercise for a workout set."""
     keyboard: list[list[InlineKeyboardButton]] = []

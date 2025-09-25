@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone  ### ИЗМЕНЕНО: Добавлен import timezone
+from datetime import datetime, time, timezone
 from typing import Any, Dict, Iterable, Optional
 
 from telegram import Update
@@ -16,6 +16,7 @@ from bot.api.gym_stat_client import (
 )
 from bot.config.settings import WORKOUT_CREATION
 from bot.keyboards.workouts_menu import (
+    build_add_set_keyboard,
     build_exercise_selection_keyboard,
     build_workouts_keyboard,
     get_workout_details_keyboard,
@@ -32,6 +33,7 @@ _WORKOUT_STAGE_KEY = "workout_stage"
 _WORKOUT_DRAFT_KEY = "workout_draft"
 _WORKOUT_MESSAGE_IDS_KEY = "workout_prompt_ids"
 _WORKOUT_EXERCISES_KEY = "workout_exercise_choices"
+_WORKOUT_CURRENT_SET_KEY = "workout_current_set"
 _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S.%f%z",
     "%Y-%m-%dT%H:%M:%S%z",
@@ -195,7 +197,7 @@ async def start_create_workout(
         return ConversationHandler.END
 
     context.user_data[_WORKOUT_STAGE_KEY] = "name"
-    context.user_data[_WORKOUT_DRAFT_KEY] = {}
+    context.user_data[_WORKOUT_DRAFT_KEY] = {"sets": []}
     context.user_data[_WORKOUT_MESSAGE_IDS_KEY] = []
 
     message = await query.message.edit_text(
@@ -318,18 +320,27 @@ async def handle_workout_creation_input(
             _reset_workout_flow(context)
             return ConversationHandler.END
 
-        context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
+        draft.setdefault("sets", [])
+        context.user_data[_WORKOUT_STAGE_KEY] = "add_set_prompt"
         context.user_data[_WORKOUT_EXERCISES_KEY] = {
             exercise.get("uuid"): exercise for exercise in exercises if exercise.get("uuid")
         }
-        keyboard = build_exercise_selection_keyboard(exercises)
+        context.user_data.pop(_WORKOUT_CURRENT_SET_KEY, None)
+        keyboard = build_add_set_keyboard()
         message = await update.message.reply_text(
             (
-                "💪 <b>Выберите упражнение для тренировки</b>."
-                " После выбора бот попросит указать вес, повторы и интенсивность."
+                "💪 <b>Создать подход?</b>."
+                " После выбора бот попросит указать вес, количество повторов и интенсивность."
             ),
             parse_mode="HTML",
             reply_markup=keyboard,
+        )
+        _remember_prompt(context, message.message_id, chat_id)
+        return WORKOUT_CREATION
+
+    if stage == "add_set_prompt":
+        message = await update.message.reply_text(
+            "ℹ️ Используйте кнопки «Да» или «Нет», чтобы добавить подход или завершить создание.",
         )
         _remember_prompt(context, message.message_id, chat_id)
         return WORKOUT_CREATION
@@ -342,6 +353,15 @@ async def handle_workout_creation_input(
         return WORKOUT_CREATION
 
     if stage == "weight":
+        current_set = context.user_data.get(_WORKOUT_CURRENT_SET_KEY)
+        if not current_set or not current_set.get("exerciseId"):
+            context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
+            message = await update.message.reply_text(
+                "⚠️ Сначала выберите упражнение с помощью кнопок.",
+            )
+            _remember_prompt(context, message.message_id, chat_id)
+            return WORKOUT_CREATION
+
         weight = _parse_number(text)
         if weight is None or weight <= 0:
             message = await update.message.reply_text(
@@ -349,7 +369,8 @@ async def handle_workout_creation_input(
             )
             _remember_prompt(context, message.message_id, chat_id)
             return WORKOUT_CREATION
-        counts = draft.setdefault("counts", {})
+
+        counts = current_set.setdefault("counts", {})
         counts["weight"] = weight
         context.user_data[_WORKOUT_STAGE_KEY] = "reps"
         message = await update.message.reply_text(
@@ -359,13 +380,31 @@ async def handle_workout_creation_input(
         return WORKOUT_CREATION
 
     if stage == "reps":
+        current_set = context.user_data.get(_WORKOUT_CURRENT_SET_KEY)
+        if not current_set or not current_set.get("exerciseId"):
+            context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
+            message = await update.message.reply_text(
+                "⚠️ Сначала выберите упражнение с помощью кнопок.",
+            )
+            _remember_prompt(context, message.message_id, chat_id)
+            return WORKOUT_CREATION
+
+        counts = current_set.setdefault("counts", {})
+        if counts.get("weight") is None:
+            context.user_data[_WORKOUT_STAGE_KEY] = "weight"
+            message = await update.message.reply_text(
+                "⚠️ Сначала укажите вес для подхода.",
+            )
+            _remember_prompt(context, message.message_id, chat_id)
+            return WORKOUT_CREATION
+
         if not text.isdigit() or int(text) <= 0:
             message = await update.message.reply_text(
                 "⚠️ Повторы вводятся целым числом больше нуля.",
             )
             _remember_prompt(context, message.message_id, chat_id)
             return WORKOUT_CREATION
-        counts = draft.setdefault("counts", {})
+
         counts["reps"] = int(text)
         context.user_data[_WORKOUT_STAGE_KEY] = "intensity"
         message = await update.message.reply_text(
@@ -380,40 +419,61 @@ async def handle_workout_creation_input(
         return WORKOUT_CREATION
 
     if stage == "intensity":
-        counts = draft.setdefault("counts", {})
-        intensity = text.strip()
-        if intensity and intensity != "-":
-            counts["type"] = intensity.replace(" ", "-").lower()
-        payload = _prepare_payload(draft)
-        if payload is None:
-            await update.message.reply_text(
-                "⚠️ Не удалось подготовить данные тренировки. Попробуйте снова.",
+        current_set = context.user_data.get(_WORKOUT_CURRENT_SET_KEY)
+        if not current_set or not current_set.get("exerciseId"):
+            context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
+            message = await update.message.reply_text(
+                "⚠️ Сначала выберите упражнение с помощью кнопок.",
             )
-            context.user_data["conversation_active"] = False
-            _reset_workout_flow(context)
-            return ConversationHandler.END
+            _remember_prompt(context, message.message_id, chat_id)
+            return WORKOUT_CREATION
 
-        response = await api_create_workout(token, payload)
-        if response.status_code not in (200, 201):
-            logger.warning(
-                "Ошибка создания тренировки: %s", response.text
+        counts = current_set.setdefault("counts", {})
+        if counts.get("weight") is None:
+            context.user_data[_WORKOUT_STAGE_KEY] = "weight"
+            message = await update.message.reply_text(
+                "⚠️ Сначала укажите вес для подхода.",
             )
-            await update.message.reply_text(
-                "❌ Не удалось создать тренировку. Попробуйте повторить попытку позже.",
+            _remember_prompt(context, message.message_id, chat_id)
+            return WORKOUT_CREATION
+        if counts.get("reps") is None:
+            context.user_data[_WORKOUT_STAGE_KEY] = "reps"
+            message = await update.message.reply_text(
+                "⚠️ Сначала введите количество повторов.",
             )
-            context.user_data["conversation_active"] = False
-            _reset_workout_flow(context)
-            return ConversationHandler.END
+            _remember_prompt(context, message.message_id, chat_id)
+            return WORKOUT_CREATION
 
-        workouts = await _fetch_workouts(token) or []
-        await update.message.reply_text(
-            "✅ Тренировка успешно сохранена в Gym-Stat!",
-            reply_markup=build_workouts_keyboard(workouts),
-            parse_mode="HTML",
+        intensity_value = text.strip()
+        if intensity_value and intensity_value != "-":
+            counts["type"] = intensity_value.replace(" ", "-").lower()
+        else:
+            counts.pop("type", None)
+
+        weight_value = counts.get("weight")
+        if isinstance(weight_value, float) and weight_value.is_integer():
+            counts["weight"] = int(weight_value)
+
+        set_entry = {
+            "exerciseId": current_set.get("exerciseId"),
+            "counts": {
+                "reps": counts.get("reps"),
+                "weight": counts.get("weight"),
+            },
+        }
+        if counts.get("type"):
+            set_entry["counts"]["type"] = counts["type"]
+
+        draft.setdefault("sets", []).append(set_entry)
+        context.user_data.pop(_WORKOUT_CURRENT_SET_KEY, None)
+        context.user_data[_WORKOUT_STAGE_KEY] = "add_set_prompt"
+        keyboard = build_add_set_keyboard()
+        message = await update.message.reply_text(
+            "✅ Подход добавлен. Хотите создать ещё один?",
+            reply_markup=keyboard,
         )
-        context.user_data["conversation_active"] = False
-        _reset_workout_flow(context)
-        return ConversationHandler.END
+        _remember_prompt(context, message.message_id, chat_id)
+        return WORKOUT_CREATION
 
     await update.message.reply_text(
         "⚠️ Неизвестный шаг. Попробуйте начать заново.",
@@ -453,7 +513,11 @@ async def handle_workout_exercise_selection(
         )
         return WORKOUT_CREATION
 
-    draft["exerciseId"] = exercise_uuid
+    draft.setdefault("sets", [])
+    context.user_data[_WORKOUT_CURRENT_SET_KEY] = {
+        "exerciseId": exercise_uuid,
+        "counts": {},
+    }
     context.user_data[_WORKOUT_STAGE_KEY] = "weight"
 
     await query.message.edit_text(
@@ -461,6 +525,105 @@ async def handle_workout_exercise_selection(
             "⚖️ Введите вес для подхода. Можно указать дробное значение через"
             " точку."
         )
+    )
+    return WORKOUT_CREATION
+
+async def handle_workout_add_set_choice(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handles confirmation whether to add another workout set or finish."""
+    query = update.callback_query
+    await query.answer()
+    choice = query.data.split(":", maxsplit=3)[-1]
+
+    stage = context.user_data.get(_WORKOUT_STAGE_KEY)
+    if stage != "add_set_prompt":
+        await query.message.edit_text(
+            "⚠️ Сейчас нельзя изменить количество подходов. Начните создание заново.",
+        )
+        context.user_data["conversation_active"] = False
+        _reset_workout_flow(context)
+        return ConversationHandler.END
+
+    draft: Dict[str, Any] = context.user_data.get(_WORKOUT_DRAFT_KEY, {})
+    token: Optional[str] = context.user_data.get("workout_token")
+
+    if choice == "yes":
+        exercise_choices: Dict[str, Dict[str, Any]] = context.user_data.get(
+            _WORKOUT_EXERCISES_KEY, {}
+        )
+        if not exercise_choices:
+            await query.message.edit_text(
+                "⚠️ Нет доступных упражнений. Создайте их в соответствующем разделе.",
+            )
+            context.user_data["conversation_active"] = False
+            _reset_workout_flow(context)
+            return ConversationHandler.END
+
+        context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
+        context.user_data[_WORKOUT_CURRENT_SET_KEY] = {"counts": {}}
+        keyboard = build_exercise_selection_keyboard(exercise_choices.values())
+        await query.message.edit_text(
+            (
+                "💪 <b>Выберите упражнение для подхода</b>."
+                " После выбора бот попросит указать вес, повторы и интенсивность."
+            ),
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+        return WORKOUT_CREATION
+
+    if choice == "no":
+        sets = draft.get("sets") or []
+        if not sets:
+            await query.message.edit_text(
+                "⚠️ Тренировка должна содержать хотя бы один подход.",
+                reply_markup=build_add_set_keyboard(),
+            )
+            return WORKOUT_CREATION
+
+        if token is None:
+            await query.message.edit_text(
+                "⚠️ Не удалось подготовить данные тренировки. Попробуйте снова.",
+            )
+            context.user_data["conversation_active"] = False
+            _reset_workout_flow(context)
+            return ConversationHandler.END
+
+        payload = _prepare_payload(draft)
+        if payload is None:
+            await query.message.edit_text(
+                "⚠️ Не удалось подготовить данные тренировки. Попробуйте снова.",
+            )
+            context.user_data["conversation_active"] = False
+            _reset_workout_flow(context)
+            return ConversationHandler.END
+
+        response = await api_create_workout(token, payload)
+        if response.status_code not in (200, 201):
+            logger.warning(
+                "Ошибка создания тренировки: %s", response.text
+            )
+            await query.message.edit_text(
+                "❌ Не удалось создать тренировку. Попробуйте повторить попытку позже.",
+            )
+            context.user_data["conversation_active"] = False
+            _reset_workout_flow(context)
+            return ConversationHandler.END
+
+        workouts = await _fetch_workouts(token) or []
+        await query.message.edit_text(
+            "✅ Тренировка успешно сохранена в Gym-Stat!",
+            reply_markup=build_workouts_keyboard(workouts),
+            parse_mode="HTML",
+        )
+        context.user_data["conversation_active"] = False
+        _reset_workout_flow(context)
+        return ConversationHandler.END
+
+    await query.message.edit_text(
+        "⚠️ Неизвестный вариант выбора. Попробуйте снова.",
+        reply_markup=build_add_set_keyboard(),
     )
     return WORKOUT_CREATION
 
@@ -594,25 +757,38 @@ def _prepare_payload(draft: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     date_value = draft.get("date")
     duration = draft.get("duration")
     calories = draft.get("calories")
-    exercise_id = draft.get("exerciseId")
-    counts: Dict[str, Any] = draft.get("counts", {})
+    sets: Iterable[Dict[str, Any]] = draft.get("sets") or []
 
-    if not all([name, description, date_value, duration is not None, calories is not None, exercise_id]):
+    if not all([name, description, date_value, duration is not None, calories is not None]):
         return None
-    reps = counts.get("reps")
-    weight = counts.get("weight")
-    if reps is None or weight is None:
+    if not sets:
         return None
 
-    if isinstance(weight, float) and weight.is_integer():
-        weight = int(weight)
+    prepared_sets: list[Dict[str, Any]] = []
+    for workout_set in sets:
+        exercise_id = workout_set.get("exerciseId")
+        counts: Dict[str, Any] = workout_set.get("counts", {})
+        reps = counts.get("reps")
+        weight = counts.get("weight")
+        if not exercise_id or reps is None or weight is None:
+            return None
 
-    count_entry: Dict[str, Any] = {
-        "reps": reps,
-        "weight": weight,
-    }
-    if counts.get("type"):
-        count_entry["type"] = counts["type"]
+        if isinstance(weight, float) and weight.is_integer():
+            weight = int(weight)
+
+        count_entry: Dict[str, Any] = {
+            "reps": reps,
+            "weight": weight,
+        }
+        if counts.get("type"):
+            count_entry["type"] = counts["type"]
+
+    prepared_sets.append(
+        {
+            "exerciseId": exercise_id,
+            "counts": [count_entry],
+        }
+    )
 
     payload = {
         "name": name,
@@ -620,12 +796,7 @@ def _prepare_payload(draft: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "date": date_value,
         "duration": duration,
         "calories": calories,
-        "sets": [
-            {
-                "exerciseId": exercise_id,
-                "counts": [count_entry],
-            }
-        ],
+        "sets": prepared_sets,
     }
     return payload
 
@@ -635,6 +806,7 @@ def _reset_workout_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop(_WORKOUT_DRAFT_KEY, None)
     context.user_data.pop(_WORKOUT_MESSAGE_IDS_KEY, None)
     context.user_data.pop(_WORKOUT_EXERCISES_KEY, None)
+    context.user_data.pop(_WORKOUT_CURRENT_SET_KEY, None)
     context.user_data.pop("workout_token", None)
 
 
