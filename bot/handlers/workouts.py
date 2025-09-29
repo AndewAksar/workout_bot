@@ -902,16 +902,16 @@ def _format_workout_details(
 
     sets = workout.get("sets") or []
     if sets:
-        parts.append("\n<b>Подходы:</b>")
+        parts.append("\n<b>Подходы:</b> 💪")
         for idx, workout_set in enumerate(sets, start=1):
             exercise_label = _format_exercise_label(workout_set, exercise_names)
             counts = workout_set.get("counts") or []
-            parts.append(f"{idx}. Упражнение: {exercise_label}")
+            parts.append(f"\n{idx}. <i>Упражнение:</i> {exercise_label}️")
             for count_idx, count in enumerate(counts, start=1):
                 reps = count.get("reps")
                 weight = count.get("weight")
                 intensity = count.get("type")
-                line = f"   • Подход {count_idx}: {reps} повторов, вес {weight}"
+                line = f"   • Подход {count_idx}: {reps} повторов, вес {weight} кг"
                 if intensity:
                     line += f", интенсивность: {intensity}"
                 parts.append(line)

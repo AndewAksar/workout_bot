@@ -484,7 +484,9 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"Дата рождения: <code>{html.escape(birth_fmt)}</code>\n"
                     f"{weight_line}"
                     f"Рост: <code>{esc(height_value)}</code> см\n"
-                    f"Пол: <code>{format_gender(prof.get('gender'))}</code>"
+                    f"Пол: <code>{format_gender(prof.get('gender'))}</code>\n\n"
+                    f"📧 Email: <code>{esc(prof.get('email'))}</code>\n"
+                    f'Вы перешли в режим "интеграция с Gym-Stat.ru". Для смены режима используйте <code>"🔄Сменить режим"</code>'
                 )
             except Exception as e:
                 logger.error(
