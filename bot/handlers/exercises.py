@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
@@ -70,6 +71,34 @@ _DESCRIPTION_INTRO = (
 _EXERCISES_INTRO = (
     "📋 <b>Упражнения</b>\n"
     "Описание: Упражнения синхронизируются с Gym-Stat и привязаны к выбранным группам.\n"
+)
+
+_UUID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+_DESCRIPTION_SOURCE_KEYS = (
+    "description",
+    "description_text",
+    "descriptionText",
+    "description_html",
+    "descriptionHtml",
+    "description_plain",
+    "descriptionPlain",
+    "notes",
+    "note",
+)
+
+_NESTED_DESCRIPTION_KEYS = (
+    "text",
+    "value",
+    "description",
+    "content",
+    "body",
+    "plain",
+    "plain_text",
+    "plainText",
 )
 
 
@@ -238,10 +267,48 @@ def _format_datetime(value: Any) -> Optional[str]:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
+def _extract_readable_text(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or _UUID_PATTERN.fullmatch(text):
+            return None
+        return text
+    if isinstance(value, dict):
+        for key in _NESTED_DESCRIPTION_KEYS:
+            if key in value:
+                nested = _extract_readable_text(value.get(key))
+                if nested:
+                    return nested
+        for nested in value.values():
+            text = _extract_readable_text(nested)
+            if text:
+                return text
+        return None
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            text = _extract_readable_text(item)
+            if text:
+                return text
+    return None
+
+
+def _get_description_text(entity: dict) -> str:
+    for key in _DESCRIPTION_SOURCE_KEYS:
+        text = _extract_readable_text(entity.get(key))
+        if text:
+            return text
+    for key, value in entity.items():
+        if isinstance(key, str) and "desc" in key.lower():
+            text = _extract_readable_text(value)
+            if text:
+                return text
+    return ""
+
+
 def _format_group_details(group: dict) -> str:
     name = html.escape(str(group.get("name") or "Без названия"))
-    description_raw = str(group.get("description") or "—")
-    description = html.escape(description_raw)
+    description_text = _get_description_text(group)
+    description = html.escape(description_text) if description_text else "—"
     uuid = html.escape(str(group.get("uuid") or "—"))
     created = _format_datetime(group.get("createdAt") or group.get("created_at"))
     updated = _format_datetime(group.get("updatedAt") or group.get("updated_at"))
@@ -249,7 +316,6 @@ def _format_group_details(group: dict) -> str:
     lines = [
         f"🗂️ <b>{name}</b>",
         f"Описание: {description}",
-        f"UUID: <code>{uuid}</code>",
     ]
     if created:
         lines.append(f"Создано: {created}")
@@ -321,10 +387,10 @@ def _find_exercise(exercises: Iterable[dict], uuid: str) -> Optional[dict]:
 
 def _format_exercise_details(exercise: dict) -> str:
     name = html.escape(str(exercise.get("name") or "Без названия"))
-    description_raw = str(exercise.get("description") or "—")
-    description = html.escape(description_raw)
-
+    description_text = _get_description_text(exercise)
+    description = html.escape(description_text) if description_text else "—"
     group = exercise.get("exerciseGroup") or exercise.get("group") or {}
+
     if not isinstance(group, dict):
         group = {}
     group_name = html.escape(str(group.get("name") or "Не выбрана"))
