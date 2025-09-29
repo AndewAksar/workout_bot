@@ -63,6 +63,9 @@ _EXERCISE_CACHE_KEY = "exercises_cache"
 _EXERCISE_GROUP_CHOICES_KEY = "exercise_group_choices"
 _EXERCISE_GROUP_UPDATE_CHOICES_KEY = "exercise_group_update_choices"
 
+EXERCISE_GROUPS_PAGE_SIZE = 5
+_GROUPS_PAGE_KEY = "exercise_groups_page"
+
 
 _USER_INPUT_DELETE_DELAY = 15
 
@@ -254,6 +257,13 @@ def _find_group(groups: Iterable[dict], uuid: str) -> Optional[dict]:
 
 
 def _format_datetime(value: Any) -> Optional[str]:
+    dt = _parse_datetime(value)
+    if not dt:
+        return None
+    return dt.strftime("%d.%m.%Y %H:%M")
+
+
+def _parse_datetime(value: Any) -> Optional[datetime]:
     if not value:
         return None
     if isinstance(value, datetime):
@@ -268,7 +278,9 @@ def _format_datetime(value: Any) -> Optional[str]:
         return None
     if dt.tzinfo:
         dt = dt.astimezone(timezone.utc)
-    return dt.strftime("%d.%m.%Y %H:%M")
+    else:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _extract_readable_text(value: Any) -> Optional[str]:
@@ -331,17 +343,75 @@ def _format_group_details(group: dict) -> str:
     return "\n".join(lines)
 
 
-def _build_groups_text(groups: Iterable[dict]) -> str:
+def _build_groups_text(
+    groups: Iterable[dict], *, page: int, total_pages: int
+) -> str:
     groups_list = list(groups)
     if groups_list:
         return (
             _DESCRIPTION_INTRO
+            + f"Страница {page} из {total_pages}.\n"
             + "Выберите группу, чтобы посмотреть детали или изменить её параметры."
         )
     return (
         _DESCRIPTION_INTRO
         + "Пока у вас нет групп упражнений. Нажмите «➕ Создать группу», чтобы добавить первую."
     )
+
+
+def _parse_groups_page(callback_data: str) -> int:
+    if callback_data == "exercise_groups":
+        return 1
+    if callback_data.startswith("exercise_groups:page:"):
+        try:
+            value = int(callback_data.rsplit(":", 1)[-1])
+        except ValueError:
+            return 1
+        return value if value > 0 else 1
+    return 1
+
+
+def _coerce_page(value: Any) -> int:
+    if isinstance(value, int):
+        return value if value > 0 else 1
+    if isinstance(value, str) and value.isdigit():
+        numeric = int(value)
+        return numeric if numeric > 0 else 1
+    return 1
+
+
+def _get_current_groups_page(context: ContextTypes.DEFAULT_TYPE) -> int:
+    return _coerce_page(context.user_data.get(_GROUPS_PAGE_KEY, 1))
+
+
+def _sort_groups(groups: Iterable[dict]) -> list[dict]:
+    def _group_sort_key(group: dict) -> datetime:
+        updated = _parse_datetime(
+            group.get("updatedAt")
+            or group.get("updated_at")
+            or group.get("modifiedAt")
+            or group.get("modified_at")
+        )
+        created = _parse_datetime(group.get("createdAt") or group.get("created_at"))
+        timestamp = updated or created
+        if timestamp is None:
+            timestamp = datetime.min.replace(tzinfo=timezone.utc)
+        return timestamp
+
+    sorted_groups = [group for group in groups if isinstance(group, dict)]
+    sorted_groups.sort(key=_group_sort_key, reverse=True)
+    return sorted_groups
+
+
+def _paginate_groups(groups: list[dict], page: int) -> tuple[list[dict], int, int]:
+    if not groups:
+        return [], 1, 1
+
+    total_pages = (len(groups) + EXERCISE_GROUPS_PAGE_SIZE - 1) // EXERCISE_GROUPS_PAGE_SIZE
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * EXERCISE_GROUPS_PAGE_SIZE
+    end = start + EXERCISE_GROUPS_PAGE_SIZE
+    return groups[start:end], page, total_pages
 
 
 async def _fetch_groups(
@@ -363,7 +433,7 @@ async def _fetch_groups(
         )
         return None
 
-    groups = _filter_groups(response.json() or [])
+    groups = _sort_groups(_filter_groups(response.json() or []))
     context.user_data[_CACHE_KEY] = groups
     return groups
 
@@ -1491,6 +1561,7 @@ async def show_exercise_groups(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+    requested_page = _parse_groups_page(query.data or "")
 
     mode = await get_user_mode(user_id)
     if mode != "api":
@@ -1502,6 +1573,7 @@ async def show_exercise_groups(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="HTML",
             reply_markup=get_exercises_menu(),
         )
+        context.user_data[_GROUPS_PAGE_KEY] = 1
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
@@ -1515,6 +1587,7 @@ async def show_exercise_groups(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="HTML",
             reply_markup=get_exercises_menu(),
         )
+        context.user_data[_GROUPS_PAGE_KEY] = 1
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
@@ -1528,13 +1601,19 @@ async def show_exercise_groups(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="HTML",
             reply_markup=get_exercises_menu(),
         )
+        context.user_data[_GROUPS_PAGE_KEY] = 1
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
+    page_groups, current_page, total_pages = _paginate_groups(groups, requested_page)
+    context.user_data[_GROUPS_PAGE_KEY] = current_page
+
     await query.message.edit_text(
-        _build_groups_text(groups),
+        _build_groups_text(page_groups, page=current_page, total_pages=total_pages),
         parse_mode="HTML",
-        reply_markup=build_exercise_groups_keyboard(groups),
+        reply_markup=build_exercise_groups_keyboard(
+            page_groups, page=current_page, total_pages=total_pages
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -1548,6 +1627,7 @@ async def show_exercise_group_details(update: Update, context: ContextTypes.DEFA
     data = query.data or ""
     parts = data.split(":", 2)
     uuid = parts[2] if len(parts) == 3 else ""
+    current_page = _get_current_groups_page(context)
 
     groups = context.user_data.get(_CACHE_KEY, []) or []
     group = _find_group(groups, uuid)
@@ -1559,13 +1639,17 @@ async def show_exercise_group_details(update: Update, context: ContextTypes.DEFA
             group = _find_group(groups, uuid)
 
     if group is None:
+        page_groups, current_page, total_pages = _paginate_groups(groups, current_page)
+        context.user_data[_GROUPS_PAGE_KEY] = current_page
         await query.message.edit_text(
             (
                 _DESCRIPTION_INTRO
                 + "⚠️ Не удалось найти выбранную группу. Возможно, она была удалена."
             ),
             parse_mode="HTML",
-            reply_markup=build_exercise_groups_keyboard(groups),
+            reply_markup=build_exercise_groups_keyboard(
+                page_groups, page=current_page, total_pages=total_pages
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -1574,7 +1658,7 @@ async def show_exercise_group_details(update: Update, context: ContextTypes.DEFA
     await query.message.edit_text(
         _format_group_details(group),
         parse_mode="HTML",
-        reply_markup=get_exercise_group_actions_keyboard(uuid),
+        reply_markup=get_exercise_group_actions_keyboard(uuid, page=current_page),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -1777,20 +1861,30 @@ async def handle_exercise_group_description_input(
     prompt_chat_id, message_id = prompt if prompt else (message.chat_id, None)
 
     groups = await _fetch_groups(context, user_id, token) or []
+    page_groups, current_page, total_pages = _paginate_groups(groups, 1)
+    context.user_data[_GROUPS_PAGE_KEY] = current_page
 
     if message_id is not None:
         await _safe_edit_message(
             context,
             prompt_chat_id,
             message_id,
-            text=_build_groups_text(groups),
-            reply_markup=build_exercise_groups_keyboard(groups),
+            text=_build_groups_text(
+                page_groups, page=current_page, total_pages=total_pages
+            ),
+            reply_markup=build_exercise_groups_keyboard(
+                page_groups, page=current_page, total_pages=total_pages
+            ),
         )
     else:
         await message.reply_text(
-            _build_groups_text(groups),
+            _build_groups_text(
+                page_groups, page=current_page, total_pages=total_pages
+            ),
             parse_mode="HTML",
-            reply_markup=build_exercise_groups_keyboard(groups),
+            reply_markup=build_exercise_groups_keyboard(
+                page_groups, page=current_page, total_pages=total_pages
+            ),
         )
 
     schedule_message_deletion(
@@ -1906,9 +2000,10 @@ async def handle_exercise_group_rename_input(update: Update, context: ContextTyp
 
     groups = await _fetch_groups(context, user_id, token) or []
     group = _find_group(groups, uuid) or {"uuid": uuid, "name": new_name}
+    context.user_data[_GROUPS_PAGE_KEY] = 1
 
     text = _format_group_details(group)
-    markup = get_exercise_group_actions_keyboard(uuid)
+    markup = get_exercise_group_actions_keyboard(uuid, page=1)
 
     if message_id is not None:
         await _safe_edit_message(context, chat_id, message_id, text=text, reply_markup=markup)
@@ -2024,9 +2119,10 @@ async def handle_exercise_group_description_update(
 
     groups = await _fetch_groups(context, user_id, token) or []
     group = _find_group(groups, uuid) or {"uuid": uuid, "description": description}
+    context.user_data[_GROUPS_PAGE_KEY] = 1
 
     text = _format_group_details(group)
-    markup = get_exercise_group_actions_keyboard(uuid)
+    markup = get_exercise_group_actions_keyboard(uuid, page=1)
 
     if message_id is not None:
         await _safe_edit_message(context, chat_id, message_id, text=text, reply_markup=markup)
@@ -2118,14 +2214,22 @@ async def delete_exercise_group(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     groups = await _fetch_groups(context, user_id, token) or []
+    page_groups, current_page, total_pages = _paginate_groups(groups, 1)
+    context.user_data[_GROUPS_PAGE_KEY] = current_page
+
+    text = (
+        _DESCRIPTION_INTRO
+        + "Группа успешно удалена. Вы можете создать новую или выбрать другую из списка."
+    )
+    if groups:
+        text += f"\n\nСтраница {current_page} из {total_pages}."
 
     await query.message.edit_text(
-        (
-            _DESCRIPTION_INTRO
-            + "Группа успешно удалена. Вы можете создать новую или выбрать другую из списка."
-        ),
+        text,
         parse_mode="HTML",
-        reply_markup=build_exercise_groups_keyboard(groups),
+        reply_markup=build_exercise_groups_keyboard(
+            page_groups, page=current_page, total_pages=total_pages
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END

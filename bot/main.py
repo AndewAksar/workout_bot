@@ -249,7 +249,9 @@ def main() -> None:
                 delete_exercise,
                 pattern='^exercise:delete:[^:]+$'
             ),
-            CallbackQueryHandler(show_exercise_groups, pattern='^exercise_groups$'),
+            CallbackQueryHandler(
+                show_exercise_groups, pattern=r'^exercise_groups(?::page:\d+)?$'
+            ),
             CallbackQueryHandler(
                 show_exercise_group_details,
                 pattern='^exercise_group:view:[^:]+$'

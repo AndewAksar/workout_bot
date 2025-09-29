@@ -45,8 +45,13 @@ def build_exercises_keyboard(exercises: Iterable[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def build_exercise_groups_keyboard(groups: Iterable[dict]) -> InlineKeyboardMarkup:
-    """Создаёт клавиатуру со списком групп упражнений."""
+def build_exercise_groups_keyboard(
+    groups: Iterable[dict],
+    *,
+    page: int = 1,
+    total_pages: int = 1,
+) -> InlineKeyboardMarkup:
+    """Создаёт клавиатуру со списком групп упражнений с учётом пагинации."""
     keyboard: list[list[InlineKeyboardButton]] = []
     for group in groups:
         if not isinstance(group, dict):
@@ -59,6 +64,23 @@ def build_exercise_groups_keyboard(groups: Iterable[dict]) -> InlineKeyboardMark
             [InlineKeyboardButton(_shorten(str(name)), callback_data=f"exercise_group:view:{uuid}")]
         )
     keyboard.append([InlineKeyboardButton("➕ Создать группу", callback_data="exercise_group:create")])
+    navigation_row: list[InlineKeyboardButton] = []
+    if total_pages > 1 and page > 1:
+        navigation_row.append(
+            InlineKeyboardButton(
+                "⬅️",
+                callback_data=f"exercise_groups:page:{page - 1}",
+            )
+        )
+    if total_pages > 1 and page < total_pages:
+        navigation_row.append(
+            InlineKeyboardButton(
+                "➡️",
+                callback_data=f"exercise_groups:page:{page + 1}",
+            )
+        )
+    if navigation_row:
+        keyboard.append(navigation_row)
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="exercises_menu")])
     return InlineKeyboardMarkup(keyboard)
 
@@ -84,15 +106,19 @@ def get_exercise_delete_keyboard(uuid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_exercise_group_actions_keyboard(uuid: str) -> InlineKeyboardMarkup:
+def get_exercise_group_actions_keyboard(uuid: str, *, page: int = 1) -> InlineKeyboardMarkup:
     """Возвращает клавиатуру управления конкретной группой упражнений."""
+    if page <= 1:
+        back_callback = "exercise_groups"
+    else:
+        back_callback = f"exercise_groups:page:{page}"
     keyboard = [
         [InlineKeyboardButton("✏️ Переименовать", callback_data=f"exercise_group:rename:{uuid}")],
         [InlineKeyboardButton(
             "📝 Изменить описание", callback_data=f"exercise_group:description:{uuid}"
         )],
         [InlineKeyboardButton("🗑️ Удалить", callback_data=f"exercise_group:ask_delete:{uuid}")],
-        [InlineKeyboardButton("🔙 К списку групп", callback_data="exercise_groups")],
+        [InlineKeyboardButton("🔙 К списку групп", callback_data=back_callback)],
     ]
     return InlineKeyboardMarkup(keyboard)
 
