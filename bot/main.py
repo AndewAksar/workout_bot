@@ -49,6 +49,7 @@ from bot.handlers.profile_display import show_profile
 from bot.handlers.misc_handlers import (
     start_training,
     show_settings,
+    show_statistics_menu,
     show_personal_data_menu,
     show_training_settings,
     return_to_main_menu
@@ -282,6 +283,7 @@ def main() -> None:
             CallbackQueryHandler(show_personal_data_menu, pattern='^personal_data$'),
             CallbackQueryHandler(show_training_settings, pattern='^training_settings$'),
             CallbackQueryHandler(return_to_main_menu, pattern='^main_menu$'),
+            CallbackQueryHandler(show_statistics_menu, pattern='^statistics$'),
             CallbackQueryHandler(show_weight_data, pattern='^weight_data_page_\\d+$'),
             CallbackQueryHandler(set_name_callback, pattern='^set_name$'),
             CallbackQueryHandler(set_age_callback, pattern='^set_age$'),

@@ -21,6 +21,7 @@ from bot.keyboards.main_menu import get_main_menu
 from bot.keyboards.settings_menu import get_settings_menu
 from bot.keyboards.personal_data_menu import get_personal_data_menu
 from bot.keyboards.training_settings_menu import get_training_settings_menu
+from bot.keyboards.stats_menu import get_stats_menu
 from bot.utils.db_utils import get_user_mode
 from bot.utils.logger import setup_logging
 from bot.config.settings import DB_PATH
@@ -78,6 +79,8 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if mode == 'api':
             api_hint = (
                 "• «📏 Мои параметры» — посмотреть замеры тела, сохранённые в Gym-Stat.\n"
+                "• «📊 Статистика» — перейти к диаграммам по упражнениям,"
+                " тренировкам и весу на сайте Gym-Stat.\n"
             )
 
         await query.message.edit_text(
@@ -87,7 +90,8 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "• «📋 Личные данные» — обнови имя, возраст, вес, рост и пол.\n"
                 "• «👤 Показать профиль» — просмотр сохранённых сведений.\n"
                 f"{api_hint}"
-                "• «⚖️ Данные взвешивания» — история веса из Gym-Stat.\n"
+                "• «⚖️ Данные взвешивания» — история веса из Gym-Stat."
+                " Ссылки откроются на сайте Gym-Stat.\n"
                 "• «🔙 Назад в главное меню» — вернуться к основным действиям.\n\n"
                 "Если разделы пустые, начни с заполнения личных данных или"
                 " авторизуйся через /login для синхронизации с сайтом."
@@ -133,6 +137,64 @@ async def show_personal_data_menu(update: Update, context: ContextTypes.DEFAULT_
         ),
         parse_mode="HTML",
         reply_markup=get_personal_data_menu()
+    )
+    context.user_data['conversation_active'] = False
+    return ConversationHandler.END
+
+
+async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Показывает меню статистики Gym-Stat."""
+
+    query = update.callback_query
+    if not query:
+        logger.error("Отсутствует callback_query при показе статистики")
+        return ConversationHandler.END
+
+    await query.answer()
+
+    user_id = query.from_user.id
+    logger.info("Пользователь %s открыл раздел статистики", user_id)
+
+    try:
+        mode = await get_user_mode(user_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось определить режим пользователя %s: %s", user_id, exc)
+        try:
+            await query.message.edit_text(
+                "⚠️ Не удалось определить режим работы. Попробуйте позже.",
+                reply_markup=get_settings_menu(),
+            )
+        except Exception as reply_error:  # noqa: BLE001
+            logger.error(
+                "Ошибка при отправке уведомления пользователю %s: %s",
+                user_id,
+                reply_error,
+            )
+        context.user_data['conversation_active'] = False
+        return ConversationHandler.END
+
+    if mode != "api":
+        await query.message.edit_text(
+            "ℹ️ Статистика доступна после входа в Gym-Stat. Выполните /login"
+            " и попробуйте снова.",
+            parse_mode="HTML",
+            reply_markup=get_settings_menu(mode=mode),
+        )
+        context.user_data['conversation_active'] = False
+        return ConversationHandler.END
+
+    await query.message.edit_text(
+        (
+            "📊 <b>Статистика Gym-Stat</b>\n"
+            "• «По упражнениям» — динамика нагрузок по каждому упражнению.\n"
+            "• «По тренировкам» — суммарные показатели по занятиям.\n"
+            "• «По весу» — графики изменения массы тела.\n"
+            "Ссылки откроются в браузере на сайте Gym-Stat. Если окно не"
+            " открывается автоматически, воспользуйтесь кнопкой повторно"
+            " или скопируйте адрес вручную."
+        ),
+        parse_mode="HTML",
+        reply_markup=get_stats_menu(),
     )
     context.user_data['conversation_active'] = False
     return ConversationHandler.END
