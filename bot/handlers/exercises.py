@@ -938,11 +938,6 @@ async def prompt_rename_exercise(update: Update, context: ContextTypes.DEFAULT_T
 
     context.user_data[_EXERCISE_UUID_KEY] = uuid
     context.user_data[_EXERCISE_PROMPT_KEY] = (query.message.chat_id, query.message.message_id)
-    context.user_data[_EXERCISE_GROUP_UPDATE_CHOICES_KEY] = {
-        str(index): group.get("uuid")
-        for index, group in enumerate(groups)
-        if isinstance(group, dict) and group.get("uuid")
-    }
 
     await query.message.edit_text(
         (
