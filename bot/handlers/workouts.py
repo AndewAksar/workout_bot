@@ -37,6 +37,9 @@ _WORKOUT_MESSAGE_IDS_KEY = "workout_prompt_ids"
 _WORKOUT_EXERCISES_KEY = "workout_exercise_choices"
 _WORKOUT_CURRENT_SET_KEY = "workout_current_set"
 _WORKOUT_DETAILS_CACHE_KEY = "workout_details_cache"
+_WORKOUTS_CACHE_KEY = "workouts_cache"
+_WORKOUTS_PAGE_KEY = "workouts_current_page"
+_WORKOUTS_PAGE_SIZE = 4
 _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S.%f%z",
     "%Y-%m-%dT%H:%M:%S%z",
@@ -47,6 +50,89 @@ _DATE_FORMATS = (
 _USER_INPUT_DELETE_DELAY = 15
 
 
+def _parse_page_from_callback(data: Optional[str]) -> tuple[int, bool]:
+    """Extracts the requested page number from callback data."""
+    if not data:
+        return 1, False
+    if data.startswith("workouts:page:"):
+        try:
+            page = int(data.rsplit(":", maxsplit=1)[-1])
+        except ValueError:
+            return 1, False
+        return (page if page > 0 else 1), True
+    return 1, False
+
+
+def _get_cached_workouts(context: ContextTypes.DEFAULT_TYPE) -> list[dict[str, Any]]:
+    """Returns the cached workouts list from user data."""
+    workouts = context.user_data.get(_WORKOUTS_CACHE_KEY)
+    if isinstance(workouts, list):
+        return workouts
+    return []
+
+
+def _set_cached_workouts(
+    context: ContextTypes.DEFAULT_TYPE, workouts: Iterable[dict[str, Any]]
+) -> None:
+    context.user_data[_WORKOUTS_CACHE_KEY] = list(workouts)
+
+
+def _get_current_page(context: ContextTypes.DEFAULT_TYPE) -> int:
+    page = context.user_data.get(_WORKOUTS_PAGE_KEY)
+    if isinstance(page, int) and page > 0:
+        return page
+    return 1
+
+
+def _set_current_page(context: ContextTypes.DEFAULT_TYPE, page: int) -> None:
+    context.user_data[_WORKOUTS_PAGE_KEY] = page if page > 0 else 1
+
+
+def _calculate_total_pages(workouts: Iterable[dict[str, Any]]) -> int:
+    items = list(workouts)
+    if not items:
+        return 1
+    return max(1, (len(items) + _WORKOUTS_PAGE_SIZE - 1) // _WORKOUTS_PAGE_SIZE)
+
+
+def _workout_sort_key(workout: dict[str, Any]) -> datetime:
+    date_value = workout.get("date")
+    if not isinstance(date_value, str):
+        return datetime.min.replace(tzinfo=timezone.utc)
+    clean = date_value.strip()
+    if clean.endswith("Z"):
+        clean = clean[:-1] + "+00:00"
+    for fmt in _DATE_FORMATS:
+        try:
+            parsed = datetime.strptime(clean, fmt)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _sort_workouts(workouts: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(workouts, key=_workout_sort_key, reverse=True)
+
+
+def _build_cached_workouts_keyboard(
+    context: ContextTypes.DEFAULT_TYPE, *, include_create: bool = True
+):
+    workouts = _get_cached_workouts(context)
+    total_pages = _calculate_total_pages(workouts)
+    page = min(max(_get_current_page(context), 1), total_pages)
+    _set_current_page(context, page)
+    return build_workouts_keyboard(
+        workouts,
+        page=page,
+        page_size=_WORKOUTS_PAGE_SIZE,
+        total_pages=total_pages,
+        include_create=include_create,
+    )
+
+
 async def show_workouts_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -55,8 +141,19 @@ async def show_workouts_menu(
     await query.answer()
     user_id = query.from_user.id
 
+    requested_page, from_navigation = _parse_page_from_callback(query.data)
+
     mode = await get_user_mode(user_id)
     if mode != "api":
+        keyboard = build_workouts_keyboard(
+            [],
+            page=1,
+            page_size=_WORKOUTS_PAGE_SIZE,
+            total_pages=1,
+            include_create=False,
+        )
+        _set_cached_workouts(context, [])
+        _set_current_page(context, 1)
         await query.message.edit_text(
             (
                 "🏋️ <b>Тренировки доступны только в режиме Gym-Stat</b>\n"
@@ -64,13 +161,21 @@ async def show_workouts_menu(
                 " чтобы управлять своими тренировками и синхронизировать их с сайтом."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=keyboard,
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
     token = await get_valid_access_token(user_id)
     if not token:
+        keyboard = build_workouts_keyboard(
+            [],
+            page=1,
+            page_size=_WORKOUTS_PAGE_SIZE,
+            total_pages=1,
+            include_create=False,
+        )
+        _set_current_page(context, 1)
         await query.message.edit_text(
             (
                 "🔐 <b>Нужна авторизация</b>\n"
@@ -78,23 +183,44 @@ async def show_workouts_menu(
                 " через команду /login или кнопку «Войти» в меню настроек."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=keyboard,
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
-    workouts = await _fetch_workouts(token)
-    if workouts is None:
-        await query.message.edit_text(
-            (
-                "❌ <b>Не удалось получить список тренировок</b>\n"
-                "Попробуйте повторить попытку чуть позже."
-            ),
-            parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=True),
-        )
-        context.user_data["conversation_active"] = False
-        return ConversationHandler.END
+    cache_exists = _WORKOUTS_CACHE_KEY in context.user_data
+    workouts: list[dict[str, Any]] | None = None
+    if from_navigation and cache_exists:
+        workouts = _get_cached_workouts(context)
+
+    if workouts is None or (not from_navigation):
+        fetched = await _fetch_workouts(token)
+        if fetched is None:
+            fallback = workouts if workouts is not None else _get_cached_workouts(context)
+            total_pages = _calculate_total_pages(fallback)
+            page = min(max(requested_page, 1), total_pages)
+            _set_current_page(context, page)
+            await query.message.edit_text(
+                (
+                    "❌ <b>Не удалось получить список тренировок</b>\n"
+                    "Попробуйте повторить попытку чуть позже."
+                ),
+                parse_mode="HTML",
+                reply_markup=build_workouts_keyboard(
+                    fallback,
+                    page=page,
+                    page_size=_WORKOUTS_PAGE_SIZE,
+                    total_pages=total_pages,
+                ),
+            )
+            context.user_data["conversation_active"] = False
+            return ConversationHandler.END
+        workouts = _sort_workouts(fetched)
+        _set_cached_workouts(context, workouts)
+
+    total_pages = _calculate_total_pages(workouts)
+    page = min(max(requested_page, 1), total_pages)
+    _set_current_page(context, page)
 
     description = (
         "🗂️ <b>Ваши тренировки</b>\n"
@@ -103,7 +229,12 @@ async def show_workouts_menu(
     await query.message.edit_text(
         description,
         parse_mode="HTML",
-        reply_markup=build_workouts_keyboard(workouts),
+        reply_markup=build_workouts_keyboard(
+            workouts,
+            page=page,
+            page_size=_WORKOUTS_PAGE_SIZE,
+            total_pages=total_pages,
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -126,7 +257,9 @@ async def show_workout_details(
                 " с Gym-Stat."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -139,7 +272,9 @@ async def show_workout_details(
                 "Чтобы открыть тренировку, войдите в Gym-Stat через /login."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -152,7 +287,7 @@ async def show_workout_details(
                 "Возможно, запись была удалена или временно недоступна."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=True),
+            reply_markup=_build_cached_workouts_keyboard(context),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -167,7 +302,9 @@ async def show_workout_details(
     await query.message.edit_text(
         _format_workout_details(workout, exercise_names),
         parse_mode="HTML",
-        reply_markup=get_workout_details_keyboard(uuid),
+        reply_markup=get_workout_details_keyboard(
+            uuid, _get_current_page(context)
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -190,7 +327,9 @@ async def prompt_delete_workout(
                 " с Gym-Stat."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -203,7 +342,9 @@ async def prompt_delete_workout(
                 "Чтобы управлять тренировками, войдите в Gym-Stat через /login."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -221,7 +362,7 @@ async def prompt_delete_workout(
                     "Попробуйте снова открыть список тренировок."
                 ),
                 parse_mode="HTML",
-                reply_markup=build_workouts_keyboard([], include_create=True),
+                reply_markup=_build_cached_workouts_keyboard(context),
             )
             context.user_data["conversation_active"] = False
             return ConversationHandler.END
@@ -256,7 +397,9 @@ async def delete_workout(
                 "ℹ️ Удаление тренировок доступно только в режиме Gym-Stat."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -269,7 +412,9 @@ async def delete_workout(
                 "Чтобы удалять тренировки, войдите в Gym-Stat через /login."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -301,16 +446,36 @@ async def delete_workout(
 
     workouts = await _fetch_workouts(token)
     if workouts is None:
+        cached_workouts = [
+            item
+            for item in _get_cached_workouts(context)
+            if item.get("uuid") != uuid
+        ]
+        _set_cached_workouts(context, cached_workouts)
+        total_pages = _calculate_total_pages(cached_workouts)
+        page = min(max(_get_current_page(context), 1), total_pages)
+        _set_current_page(context, page)
         await query.message.edit_text(
             (
                 "✅ Тренировка удалена.\n"
                 "Не удалось обновить список, попробуйте открыть меню тренировок ещё раз."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=True),
+            reply_markup=build_workouts_keyboard(
+                cached_workouts,
+                page=page,
+                page_size=_WORKOUTS_PAGE_SIZE,
+                total_pages=total_pages,
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
+
+    sorted_workouts = _sort_workouts(workouts)
+    _set_cached_workouts(context, sorted_workouts)
+    total_pages = _calculate_total_pages(sorted_workouts)
+    page = min(max(_get_current_page(context), 1), total_pages)
+    _set_current_page(context, page)
 
     await query.message.edit_text(
         (
@@ -318,7 +483,12 @@ async def delete_workout(
             f"«{workout_name}» удалена из Gym-Stat."
         ),
         parse_mode="HTML",
-        reply_markup=build_workouts_keyboard(workouts),
+        reply_markup=build_workouts_keyboard(
+            sorted_workouts,
+            page=page,
+            page_size=_WORKOUTS_PAGE_SIZE,
+            total_pages=total_pages,
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -340,7 +510,9 @@ async def start_create_workout(
                 " Gym-Stat."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -354,7 +526,9 @@ async def start_create_workout(
                 " авторизоваться в Gym-Stat."
             ),
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard([], include_create=False),
+            reply_markup=_build_cached_workouts_keyboard(
+                context, include_create=False
+            ),
         )
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -828,7 +1002,8 @@ async def handle_workout_exercise_selection(
         await query.message.edit_text(
             "⚠️ Выбранное упражнение недоступно. Попробуйте выбрать другое.",
             reply_markup=build_exercise_selection_keyboard(
-                exercise_choices.values()
+                exercise_choices.values(),
+                page=_get_current_page(context),
             ),
         )
         return WORKOUT_CREATION
@@ -885,7 +1060,10 @@ async def handle_workout_add_set_choice(
 
         context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
         context.user_data[_WORKOUT_CURRENT_SET_KEY] = {"counts": {}}
-        keyboard = build_exercise_selection_keyboard(exercise_choices.values())
+        keyboard = build_exercise_selection_keyboard(
+            exercise_choices.values(),
+            page=_get_current_page(context),
+        )
         chat_id = query.message.chat_id
 
         prompt_message = await query.message.edit_text(
@@ -937,14 +1115,44 @@ async def handle_workout_add_set_choice(
             _reset_workout_flow(context)
             return ConversationHandler.END
 
-        workouts = await _fetch_workouts(token) or []
+        workouts = await _fetch_workouts(token)
+        success_message = "✅ <b>Тренировка успешно сохранена в Gym-Stat!</b>"
 
-        chat_id = query.message.chat_id
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="✅ <b>Тренировка успешно сохранена в Gym-Stat!</b>",
+        if workouts is None:
+            cached_workouts = _get_cached_workouts(context)
+            total_pages = _calculate_total_pages(cached_workouts)
+            page = min(max(_get_current_page(context), 1), total_pages)
+            _set_current_page(context, page)
+            await query.message.edit_text(
+                success_message
+                + "\nНе удалось обновить список, попробуйте открыть меню тренировок ещё раз.",
+                parse_mode="HTML",
+                reply_markup=build_workouts_keyboard(
+                    cached_workouts,
+                    page=page,
+                    page_size=_WORKOUTS_PAGE_SIZE,
+                    total_pages=total_pages,
+                ),
+            )
+            context.user_data["conversation_active"] = False
+            _reset_workout_flow(context)
+            return ConversationHandler.END
+
+        sorted_workouts = _sort_workouts(workouts)
+        _set_cached_workouts(context, sorted_workouts)
+        total_pages = _calculate_total_pages(sorted_workouts)
+        page = min(max(_get_current_page(context), 1), total_pages)
+        _set_current_page(context, page)
+
+        await query.message.edit_text(
+            success_message,
             parse_mode="HTML",
-            reply_markup=build_workouts_keyboard(workouts),
+            reply_markup=build_workouts_keyboard(
+                sorted_workouts,
+                page=page,
+                page_size=_WORKOUTS_PAGE_SIZE,
+                total_pages=total_pages,
+            ),
         )
         context.user_data["conversation_active"] = False
         _reset_workout_flow(context)
