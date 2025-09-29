@@ -350,7 +350,8 @@ def _build_groups_text(
     if groups_list:
         return (
             _DESCRIPTION_INTRO
-            + f"Страница {page} из {total_pages}.\n"
+            + f'\n\n'
+            + f"📘 Страница {page} из {total_pages}.\n"
             + "Выберите группу, чтобы посмотреть детали или изменить её параметры."
         )
     return (

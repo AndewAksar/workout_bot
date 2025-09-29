@@ -68,14 +68,14 @@ def build_exercise_groups_keyboard(
     if total_pages > 1 and page > 1:
         navigation_row.append(
             InlineKeyboardButton(
-                "⬅️",
+                "⬅️ Предыдущая страница меню",
                 callback_data=f"exercise_groups:page:{page - 1}",
             )
         )
     if total_pages > 1 and page < total_pages:
         navigation_row.append(
             InlineKeyboardButton(
-                "➡️",
+                "➡️ Следующая страница меню",
                 callback_data=f"exercise_groups:page:{page + 1}",
             )
         )
