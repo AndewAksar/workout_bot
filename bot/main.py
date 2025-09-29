@@ -214,6 +214,10 @@ def main() -> None:
             ),
             CallbackQueryHandler(show_exercises, pattern='^exercise_list$'),
             CallbackQueryHandler(
+                show_exercises,
+                pattern='^exercise_list:page:\\d+$'
+            ),
+            CallbackQueryHandler(
                 show_exercise_details,
                 pattern='^exercise:view:[^:]+$'
             ),

@@ -27,12 +27,26 @@ def get_exercises_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def build_exercises_keyboard(exercises: Iterable[dict]) -> InlineKeyboardMarkup:
-    """Формирует клавиатуру со списком упражнений."""
+def build_exercises_keyboard(
+    exercises: Iterable[dict],
+    *,
+    page: int = 1,
+    page_size: int = 4,
+    total_pages: int = 1,
+) -> InlineKeyboardMarkup:
+    """Формирует клавиатуру со списком упражнений с учётом пагинации."""
     keyboard: list[list[InlineKeyboardButton]] = []
-    for exercise in exercises:
-        if not isinstance(exercise, dict):
-            continue
+
+    exercises_list = [exercise for exercise in exercises if isinstance(exercise, dict)]
+    if page_size <= 0:
+        page_size = 1
+    if total_pages < 1:
+        total_pages = 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    for exercise in exercises_list[start:end]:
         uuid = exercise.get("uuid")
         if not uuid:
             continue
@@ -40,7 +54,21 @@ def build_exercises_keyboard(exercises: Iterable[dict]) -> InlineKeyboardMarkup:
         keyboard.append(
             [InlineKeyboardButton(_shorten(str(name)), callback_data=f"exercise:view:{uuid}")]
         )
+
     keyboard.append([InlineKeyboardButton("➕ Создать упражнение", callback_data="exercise:create")])
+
+    navigation_row: list[InlineKeyboardButton] = []
+    if total_pages > 1 and page > 1:
+        navigation_row.append(
+            InlineKeyboardButton("⬅️", callback_data=f"exercise_list:page:{page - 1}")
+        )
+    if total_pages > 1 and page < total_pages:
+        navigation_row.append(
+            InlineKeyboardButton("➡️", callback_data=f"exercise_list:page:{page + 1}")
+        )
+    if navigation_row:
+        keyboard.append(navigation_row)
+
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="exercises_menu")])
     return InlineKeyboardMarkup(keyboard)
 
