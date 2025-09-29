@@ -33,6 +33,8 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if mode == 'api':
             api_hint = (
                 "• «📏 Мои параметры» — посмотреть последние замеры тела из Gym-Stat.\n"
+                "• «📊 Статистика» — перейти к диаграммам по упражнениям,"
+                " тренировкам и весу на сайте Gym-Stat.\n"
             )
 
         await update.message.reply_text(
@@ -46,7 +48,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 " что-то пусто, заполните раздел «Личные данные».\n"
                 f"{api_hint}"
                 "• «⚖️ Данные взвешивания» — история веса (активна после входа"
-                " в Gym-Stat).\n"
+                " в Gym-Stat). Ссылки откроются на сайте Gym-Stat.\n"
                 "• «🔙 Назад в главное меню» — вернуться к основным кнопкам.\n\n"
                 "<i>Совет: если бот попросил авторизоваться, выполните /login"
                 " или используйте кнопку «Войти» в режиме Gym-Stat.</i>"

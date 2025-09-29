@@ -27,13 +27,22 @@ def get_settings_menu(mode: str = "local"):
         keyboard.append([
             InlineKeyboardButton("📏 Мои параметры", callback_data="body_params")
         ])
-
-    keyboard.append([
-        InlineKeyboardButton(
-            "⚖️ Данные взвешивания",
-            callback_data='weight_data_page_1'
-        )
-    ])
+        keyboard.append([
+            InlineKeyboardButton("📊 Статистика", callback_data='statistics')
+        ])
+        keyboard.append([
+            InlineKeyboardButton(
+                "⚖️ Данные взвешивания",
+                callback_data='weight_data_page_1'
+            )
+        ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton(
+                "⚖️ Данные взвешивания",
+                callback_data='weight_data_page_1'
+            )
+        ])
     keyboard.append([
         InlineKeyboardButton(
             "🔙 Назад в главное меню", callback_data='main_menu'

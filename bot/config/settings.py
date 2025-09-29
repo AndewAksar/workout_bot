@@ -30,6 +30,8 @@ str: Конфигурация OAuth для авторизации в Sberbank AP
 
 # Базовый URL API Gym-Stat
 GYMSTAT_API_URL = environ.get('GYMSTAT_API_URL', 'https://api.gym-stat.ru')
+# Базовый URL веб-версии Gym-Stat
+GYMSTAT_WEB_URL = environ.get('GYMSTAT_WEB_URL', 'https://gym-stat.ru')
 # Ключ для шифрования токенов
 ENCRYPT_KEY = environ.get('ENCRYPT_KEY', Fernet.generate_key().decode())
 """
