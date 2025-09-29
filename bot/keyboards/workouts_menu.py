@@ -38,12 +38,24 @@ def _format_workout_label(name: str | None, date_value: str | None) -> str:
 def build_workouts_keyboard(
     workouts: Iterable[dict],
     *,
+    page: int,
+    page_size: int,
+    total_pages: int,
     include_create: bool = True,
     include_exercises: bool = True,
 ) -> InlineKeyboardMarkup:
-    """Constructs a keyboard for the workouts list."""
+    """Constructs a keyboard for the workouts list with pagination."""
+    sanitized_page = page if page > 0 else 1
+    sanitized_page_size = page_size if page_size > 0 else 1
+    sanitized_total = total_pages if total_pages > 0 else 1
+
+    workouts_list = list(workouts)
+    start = (sanitized_page - 1) * sanitized_page_size
+    end = start + sanitized_page_size
+    page_items = workouts_list[start:end]
+
     keyboard: list[list[InlineKeyboardButton]] = []
-    for workout in workouts:
+    for workout in page_items:
         uuid = workout.get("uuid")
         if not uuid:
             continue
@@ -53,6 +65,23 @@ def build_workouts_keyboard(
         keyboard.append([
             InlineKeyboardButton(label, callback_data=f"workout:view:{uuid}"),
         ])
+
+    if sanitized_total > 1:
+        navigation_row: list[InlineKeyboardButton] = []
+        if sanitized_page > 1:
+            navigation_row.append(
+                InlineKeyboardButton(
+                    "⬅️", callback_data=f"workouts:page:{sanitized_page - 1}"
+                )
+            )
+        if sanitized_page < sanitized_total:
+            navigation_row.append(
+                InlineKeyboardButton(
+                    "➡️", callback_data=f"workouts:page:{sanitized_page + 1}"
+                )
+            )
+        if navigation_row:
+            keyboard.append(navigation_row)
 
     if include_create:
         keyboard.append([
@@ -65,7 +94,7 @@ def build_workouts_keyboard(
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_workout_details_keyboard(uuid: str) -> InlineKeyboardMarkup:
+def get_workout_details_keyboard(uuid: str, page: int) -> InlineKeyboardMarkup:
     """Keyboard shown on the workout details screen."""
     return InlineKeyboardMarkup(
         [
@@ -75,7 +104,12 @@ def get_workout_details_keyboard(uuid: str) -> InlineKeyboardMarkup:
                     callback_data=f"workout:delete_prompt:{uuid}",
                 )
             ],
-            [InlineKeyboardButton("🔙 К тренировкам", callback_data="workouts")],
+            [
+                InlineKeyboardButton(
+                    "🔙 К тренировкам",
+                    callback_data=f"workouts:page:{page if page > 0 else 1}",
+                )
+            ],
         ]
     )
 
@@ -108,7 +142,11 @@ def build_add_set_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def build_exercise_selection_keyboard(exercises: Iterable[dict]) -> InlineKeyboardMarkup:
+def build_exercise_selection_keyboard(
+    exercises: Iterable[dict],
+    *,
+    page: int = 1,
+) -> InlineKeyboardMarkup:
     """Keyboard that allows choosing an exercise for a workout set."""
     keyboard: list[list[InlineKeyboardButton]] = []
     for exercise in exercises:
@@ -121,6 +159,8 @@ def build_exercise_selection_keyboard(exercises: Iterable[dict]) -> InlineKeyboa
         ])
 
     keyboard.append([
-        InlineKeyboardButton("🔙 Назад", callback_data="workouts"),
+        InlineKeyboardButton(
+            "🔙 Назад", callback_data=f"workouts:page:{page if page > 0 else 1}"
+        ),
     ])
     return InlineKeyboardMarkup(keyboard)

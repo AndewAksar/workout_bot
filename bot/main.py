@@ -189,6 +189,10 @@ def main() -> None:
                 pattern='^workouts$'
             ),
             CallbackQueryHandler(
+                show_workouts_menu,
+                pattern='^workouts:page:\\d+$'
+            ),
+            CallbackQueryHandler(
                 show_exercises_menu,
                 pattern='^exercises_menu$'
             ),
