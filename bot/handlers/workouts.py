@@ -363,6 +363,8 @@ async def start_create_workout(
     context.user_data[_WORKOUT_DRAFT_KEY] = {"sets": []}
     context.user_data[_WORKOUT_MESSAGE_IDS_KEY] = []
 
+    chat_id = query.message.chat_id
+
     message = await query.message.edit_text(
         (
             "📝 <b>Введите название тренировки</b>\n"
@@ -370,7 +372,7 @@ async def start_create_workout(
         ),
         parse_mode="HTML",
     )
-    context.user_data[_WORKOUT_MESSAGE_IDS_KEY].append(message.message_id)
+    _remember_prompt(context, message.message_id, chat_id)
     context.user_data["conversation_active"] = True
     context.user_data["workout_token"] = token
     return WORKOUT_CREATION
@@ -837,14 +839,17 @@ async def handle_workout_exercise_selection(
         "counts": {},
     }
     context.user_data[_WORKOUT_STAGE_KEY] = "weight"
-
-    await query.message.edit_text(
+    chat_id = query.message.chat_id
+    prompt_message = await query.message.edit_text(
         (
             "⚖️ Введите вес для подхода. Можно указать дробное значение через"
             " точку."
         )
     )
+    _remember_prompt(context, prompt_message.message_id, chat_id)
+
     return WORKOUT_CREATION
+
 
 async def handle_workout_add_set_choice(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -881,7 +886,9 @@ async def handle_workout_add_set_choice(
         context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
         context.user_data[_WORKOUT_CURRENT_SET_KEY] = {"counts": {}}
         keyboard = build_exercise_selection_keyboard(exercise_choices.values())
-        await query.message.edit_text(
+        chat_id = query.message.chat_id
+
+        prompt_message = await query.message.edit_text(
             (
                 "💪 <b>Выберите упражнение для подхода</b>."
                 " После выбора бот попросит указать вес, повторы и интенсивность."
@@ -889,6 +896,7 @@ async def handle_workout_add_set_choice(
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+        _remember_prompt(context, prompt_message.message_id, chat_id)
         return WORKOUT_CREATION
 
     if choice == "no":
@@ -930,10 +938,13 @@ async def handle_workout_add_set_choice(
             return ConversationHandler.END
 
         workouts = await _fetch_workouts(token) or []
-        await query.message.edit_text(
-            "✅ Тренировка успешно сохранена в Gym-Stat!",
-            reply_markup=build_workouts_keyboard(workouts),
+
+        chat_id = query.message.chat_id
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="✅ <b>Тренировка успешно сохранена в Gym-Stat!</b>",
             parse_mode="HTML",
+            reply_markup=build_workouts_keyboard(workouts),
         )
         context.user_data["conversation_active"] = False
         _reset_workout_flow(context)
@@ -1200,7 +1211,8 @@ def _remember_prompt(
     message_id: int,
     chat_id: int,
     *,
-    delay: int = 300,
+    delay: Optional[int] = None,
 ) -> None:
+    actual_delay = _USER_INPUT_DELETE_DELAY if delay is None else delay
     context.user_data.setdefault(_WORKOUT_MESSAGE_IDS_KEY, []).append(message_id)
-    schedule_message_deletion(context, [message_id], chat_id, delay=delay)
+    schedule_message_deletion(context, [message_id], chat_id, delay=actual_delay)
