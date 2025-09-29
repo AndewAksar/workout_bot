@@ -18,19 +18,19 @@ def get_stats_menu() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 "По упражнениям",
-                url=_build_url('exercises')
+                url=_build_url('by-exercises')
             )
         ],
         [
             InlineKeyboardButton(
                 "По тренировкам",
-                url=_build_url('workouts')
+                url=_build_url('by-workouts')
             )
         ],
         [
             InlineKeyboardButton(
                 "По весу",
-                url=_build_url('weight')
+                url=_build_url('by-weight')
             )
         ],
         [
