@@ -47,6 +47,7 @@ from bot.keyboards.exercises_menu import (
 from bot.utils.api_session import get_valid_access_token
 from bot.utils.db_utils import get_user_mode
 from bot.utils.logger import setup_logging
+from bot.utils.message_deletion import schedule_message_deletion
 
 
 logger = setup_logging()
@@ -61,6 +62,9 @@ _EXERCISE_UUID_KEY = "exercise_uuid"
 _EXERCISE_CACHE_KEY = "exercises_cache"
 _EXERCISE_GROUP_CHOICES_KEY = "exercise_group_choices"
 _EXERCISE_GROUP_UPDATE_CHOICES_KEY = "exercise_group_update_choices"
+
+
+_USER_INPUT_DELETE_DELAY = 15
 
 
 _DESCRIPTION_INTRO = (
@@ -627,8 +631,18 @@ async def handle_exercise_name_input(update: Update, context: ContextTypes.DEFAU
         return EXERCISE_SET_NAME
 
     name = message.text.strip()
+    user_chat_id = message.chat_id
+    user_message_id = message.message_id
     if not name:
-        await message.reply_text("⚠️ Название не может быть пустым. Укажите другое значение.")
+        warning_message = await message.reply_text(
+            "⚠️ Название не может быть пустым. Укажите другое значение."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning_message.message_id],
+            user_chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return EXERCISE_SET_NAME
 
     draft = context.user_data.get(_EXERCISE_DRAFT_KEY)
@@ -643,10 +657,23 @@ async def handle_exercise_name_input(update: Update, context: ContextTypes.DEFAU
         "Можно указать краткую подсказку. Отправьте «-», чтобы оставить пустым."
     )
     if prompt:
-        chat_id, message_id = prompt
-        await _safe_edit_message(context, chat_id, message_id, text=text)
+        prompt_chat_id, message_id = prompt
+        await _safe_edit_message(context, prompt_chat_id, message_id, text=text)
     else:
-        await message.reply_text(text, parse_mode="HTML")
+        prompt_message = await message.reply_text(text, parse_mode="HTML")
+        schedule_message_deletion(
+            context,
+            [prompt_message.message_id],
+            user_chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
+
+    schedule_message_deletion(
+        context,
+        [user_message_id],
+        user_chat_id,
+        delay=_USER_INPUT_DELETE_DELAY,
+    )
 
     context.user_data["conversation_active"] = True
     return EXERCISE_SET_DESCRIPTION
@@ -664,10 +691,20 @@ async def handle_exercise_description_input(
     if description == "-":
         description = ""
 
+    user_chat_id = message.chat_id
+    user_message_id = message.message_id
     draft = context.user_data.get(_EXERCISE_DRAFT_KEY)
     name = draft.get("name") if isinstance(draft, dict) else None
     if not name:
-        await message.reply_text("⚠️ Не удалось определить название упражнения. Попробуйте снова.")
+        warning_message = await message.reply_text(
+            "⚠️ Не удалось определить название упражнения. Попробуйте снова."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning_message.message_id],
+            user_chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_exercise_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -675,14 +712,30 @@ async def handle_exercise_description_input(
     user_id = message.from_user.id
     mode = await get_user_mode(user_id)
     if mode != "api":
-        await message.reply_text("Для создания упражнений необходимо включить режим Gym-Stat.")
+        info_message = await message.reply_text(
+            "Для создания упражнений необходимо включить режим Gym-Stat."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, info_message.message_id],
+            user_chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_exercise_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
     token = await get_valid_access_token(user_id)
     if not token:
-        await message.reply_text("🔐 Пожалуйста, выполните вход через /login и повторите попытку.")
+        info_message = await message.reply_text(
+            "🔐 Пожалуйста, выполните вход через /login и повторите попытку."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, info_message.message_id],
+            user_chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_exercise_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -694,13 +747,27 @@ async def handle_exercise_description_input(
     if not isinstance(groups, list) or not groups:
         groups = await _fetch_groups(context, user_id, token)
         if groups is None:
-            await message.reply_text("❌ Не удалось получить список групп. Попробуйте позже.")
+            error_message = await message.reply_text(
+                "❌ Не удалось получить список групп. Попробуйте позже."
+            )
+            schedule_message_deletion(
+                context,
+                [user_message_id, error_message.message_id],
+                user_chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             _reset_exercise_flow(context)
             context.user_data["conversation_active"] = False
             return ConversationHandler.END
         if not groups:
-            await message.reply_text(
+            info_message = await message.reply_text(
                 "⚠️ Прежде чем создать упражнение, добавьте хотя бы одну группу в разделе «Группы упражнений»."
+            )
+            schedule_message_deletion(
+                context,
+                [user_message_id, info_message.message_id],
+                user_chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
             )
             _reset_exercise_flow(context)
             context.user_data["conversation_active"] = False
@@ -732,6 +799,13 @@ async def handle_exercise_description_input(
             parse_mode="HTML",
             reply_markup=build_exercise_group_selection_keyboard(groups),
         )
+
+    schedule_message_deletion(
+        context,
+        [user_message_id],
+        user_chat_id,
+        delay=_USER_INPUT_DELETE_DELAY,
+    )
 
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -1558,9 +1632,19 @@ async def handle_exercise_group_name_input(update: Update, context: ContextTypes
     if not message or not message.text:
         return EXERCISE_GROUP_SET_NAME
 
+    chat_id = message.chat_id
+    user_message_id = message.message_id
     name = message.text.strip()
     if not name:
-        await message.reply_text("⚠️ Название не может быть пустым. Укажите другое значение.")
+        warning_message = await message.reply_text(
+            "⚠️ Название не может быть пустым. Укажите другое значение."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, warning_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return EXERCISE_GROUP_SET_NAME
 
     draft = context.user_data.get(_DRAFT_KEY, {})
@@ -1580,6 +1664,13 @@ async def handle_exercise_group_name_input(update: Update, context: ContextTypes
             ),
         )
 
+    schedule_message_deletion(
+        context,
+        [user_message_id],
+        chat_id,
+        delay=_USER_INPUT_DELETE_DELAY,
+    )
+
     context.user_data["conversation_active"] = True
     return EXERCISE_GROUP_SET_DESCRIPTION
 
@@ -1596,10 +1687,20 @@ async def handle_exercise_group_description_input(
     if description == "-":
         description = ""
 
+    chat_id = message.chat_id
+    user_message_id = message.message_id
     draft = context.user_data.get(_DRAFT_KEY)
     name = draft.get("name") if isinstance(draft, dict) else None
     if not name:
-        await message.reply_text("⚠️ Не удалось определить название группы. Попробуйте снова.")
+        error_message = await message.reply_text(
+            "⚠️ Не удалось определить название группы. Попробуйте снова."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, error_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -1607,14 +1708,30 @@ async def handle_exercise_group_description_input(
     user_id = message.from_user.id
     mode = await get_user_mode(user_id)
     if mode != "api":
-        await message.reply_text("Для создания групп необходимо включить режим Gym-Stat.")
+        info_message = await message.reply_text(
+            "Для создания групп необходимо включить режим Gym-Stat."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, info_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
     token = await get_valid_access_token(user_id)
     if not token:
-        await message.reply_text("🔐 Пожалуйста, выполните вход через /login и повторите попытку.")
+        info_message = await message.reply_text(
+            "🔐 Пожалуйста, выполните вход через /login и повторите попытку."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, info_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -1624,7 +1741,15 @@ async def handle_exercise_group_description_input(
         response = await api_create_exercise_group(token, payload)
     except httpx.RequestError as exc:
         logger.error("Ошибка создания группы для пользователя %s: %s", user_id, exc)
-        await message.reply_text("❌ Не удалось создать группу упражнений. Попробуйте позже.")
+        error_message = await message.reply_text(
+            "❌ Не удалось создать группу упражнений. Попробуйте позже."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, error_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
@@ -1635,20 +1760,28 @@ async def handle_exercise_group_description_input(
             response.status_code,
             response.text,
         )
-        await message.reply_text("❌ Gym-Stat вернул ошибку при создании группы. Проверьте данные и попробуйте снова.")
+        error_message = await message.reply_text(
+            "❌ Gym-Stat вернул ошибку при создании группы. Проверьте данные и попробуйте снова."
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, error_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         _reset_flow(context)
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
     prompt = context.user_data.get(_PROMPT_KEY)
-    chat_id, message_id = prompt if prompt else (message.chat_id, None)
+    prompt_chat_id, message_id = prompt if prompt else (message.chat_id, None)
 
     groups = await _fetch_groups(context, user_id, token) or []
 
     if message_id is not None:
         await _safe_edit_message(
             context,
-            chat_id,
+            prompt_chat_id,
             message_id,
             text=_build_groups_text(groups),
             reply_markup=build_exercise_groups_keyboard(groups),
@@ -1659,6 +1792,13 @@ async def handle_exercise_group_description_input(
             parse_mode="HTML",
             reply_markup=build_exercise_groups_keyboard(groups),
         )
+
+    schedule_message_deletion(
+        context,
+        [user_message_id],
+        chat_id,
+        delay=_USER_INPUT_DELETE_DELAY,
+    )
 
     _reset_flow(context)
     context.user_data["conversation_active"] = False
