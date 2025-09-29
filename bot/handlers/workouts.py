@@ -44,6 +44,8 @@ _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S",
 )
 
+_USER_INPUT_DELETE_DELAY = 15
+
 
 async def show_workouts_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -382,100 +384,165 @@ async def handle_workout_creation_input(
     draft: Dict[str, Any] = context.user_data.get(_WORKOUT_DRAFT_KEY, {})
     token: Optional[str] = context.user_data.get("workout_token")
 
+    user_message = update.message
+    if not user_message or user_message.text is None:
+        return WORKOUT_CREATION
+
+    chat_id = user_message.chat_id
+    user_message_id = user_message.message_id
+    text = user_message.text.strip()
+
     if stage is None or draft is None or token is None:
-        await update.message.reply_text(
+        error_message = await user_message.reply_text(
             "⚠️ Возникла ошибка. Попробуйте начать создание тренировки заново.",
+        )
+        schedule_message_deletion(
+            context,
+            [user_message_id, error_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
         )
         context.user_data["conversation_active"] = False
         _reset_workout_flow(context)
         return ConversationHandler.END
 
-    text = update.message.text.strip()
-    chat_id = update.message.chat_id
-
     if stage == "name":
         draft["name"] = text
         context.user_data[_WORKOUT_STAGE_KEY] = "description"
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             (
                 "📝 <b>Добавьте описание тренировки</b>\n"
                 "Например: <code>Силовая работа с акцентом на базовые упражнения</code>."
             ),
             parse_mode="HTML",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "description":
         draft["description"] = text
         context.user_data[_WORKOUT_STAGE_KEY] = "date"
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             (
                 "📅 <b>Укажите дату тренировки</b> в формате"
                 " <code>гггг-мм-дд</code>."
             ),
             parse_mode="HTML",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "date":
         parsed_date = _parse_user_date(text)
         if not parsed_date:
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Неверный формат даты. Используйте <code>гггг-мм-дд</code>.",
                 parse_mode="HTML",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
         draft["date"] = parsed_date
         context.user_data[_WORKOUT_STAGE_KEY] = "duration"
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             "⏱️ <b>Укажите длительность тренировки</b> в минутах.",
             parse_mode="HTML",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "duration":
         if not text.isdigit() or int(text) <= 0:
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Введите целое число минут больше нуля.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
         draft["duration"] = int(text)
         context.user_data[_WORKOUT_STAGE_KEY] = "calories"
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             "🔥 <b>Укажите потраченные калории</b> (целое число).",
             parse_mode="HTML",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "calories":
         if not text.isdigit() or int(text) < 0:
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Калории вводятся целым числом не меньше нуля.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
         draft["calories"] = int(text)
 
         exercises = await _fetch_exercises(token)
         if exercises is None:
-            await update.message.reply_text(
+            error_message = await user_message.reply_text(
                 "❌ Не удалось получить список упражнений. Попробуйте позже.",
+            )
+            schedule_message_deletion(
+                context,
+                [user_message_id, error_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
             )
             context.user_data["conversation_active"] = False
             _reset_workout_flow(context)
             return ConversationHandler.END
         if not exercises:
-            await update.message.reply_text(
+            info_message = await user_message.reply_text(
                 (
                     "📋 Сначала создайте хотя бы одно упражнение в разделе"
                     " «Упражнения», затем повторите создание тренировки."
                 )
+            )
+            schedule_message_deletion(
+                context,
+                [user_message_id, info_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
             )
             context.user_data["conversation_active"] = False
             _reset_workout_flow(context)
@@ -488,7 +555,7 @@ async def handle_workout_creation_input(
         }
         context.user_data.pop(_WORKOUT_CURRENT_SET_KEY, None)
         keyboard = build_add_set_keyboard()
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             (
                 "💪 <b>Создать подход?</b>."
                 " После выбора бот попросит указать вес, количество повторов и интенсивность."
@@ -496,79 +563,133 @@ async def handle_workout_creation_input(
             parse_mode="HTML",
             reply_markup=keyboard,
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "add_set_prompt":
-        message = await update.message.reply_text(
+        info_message = await user_message.reply_text(
             "ℹ️ Используйте кнопки «Да» или «Нет», чтобы добавить подход или завершить создание.",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, info_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id, info_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "exercise":
-        message = await update.message.reply_text(
+        info_message = await user_message.reply_text(
             "ℹ️ Выберите упражнение, используя кнопки под предыдущим сообщением.",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, info_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id, info_message.message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "weight":
         current_set = context.user_data.get(_WORKOUT_CURRENT_SET_KEY)
         if not current_set or not current_set.get("exerciseId"):
             context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Сначала выберите упражнение с помощью кнопок.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         weight = _parse_number(text)
         if weight is None or weight <= 0:
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Вес указывается положительным числом. Пример: 60 или 60.5",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         counts = current_set.setdefault("counts", {})
         counts["weight"] = weight
         context.user_data[_WORKOUT_STAGE_KEY] = "reps"
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             "🔢 Укажите количество повторов для подхода (целое число).",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "reps":
         current_set = context.user_data.get(_WORKOUT_CURRENT_SET_KEY)
         if not current_set or not current_set.get("exerciseId"):
             context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Сначала выберите упражнение с помощью кнопок.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         counts = current_set.setdefault("counts", {})
         if counts.get("weight") is None:
             context.user_data[_WORKOUT_STAGE_KEY] = "weight"
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Сначала укажите вес для подхода.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         if not text.isdigit() or int(text) <= 0:
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Повторы вводятся целым числом больше нуля.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         counts["reps"] = int(text)
         context.user_data[_WORKOUT_STAGE_KEY] = "intensity"
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             (
                 "💥 Укажите степень интенсивности (например: <code>no-failure</code>,"
                 " <code>muscle-failure</code>, <code>technical-failure</code>)."
@@ -576,33 +697,57 @@ async def handle_workout_creation_input(
             ),
             parse_mode="HTML",
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
     if stage == "intensity":
         current_set = context.user_data.get(_WORKOUT_CURRENT_SET_KEY)
         if not current_set or not current_set.get("exerciseId"):
             context.user_data[_WORKOUT_STAGE_KEY] = "exercise"
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Сначала выберите упражнение с помощью кнопок.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         counts = current_set.setdefault("counts", {})
         if counts.get("weight") is None:
             context.user_data[_WORKOUT_STAGE_KEY] = "weight"
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Сначала укажите вес для подхода.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
         if counts.get("reps") is None:
             context.user_data[_WORKOUT_STAGE_KEY] = "reps"
-            message = await update.message.reply_text(
+            warning_message = await user_message.reply_text(
                 "⚠️ Сначала введите количество повторов.",
             )
-            _remember_prompt(context, message.message_id, chat_id)
+            _remember_prompt(context, warning_message.message_id, chat_id)
+            schedule_message_deletion(
+                context,
+                [user_message_id, warning_message.message_id],
+                chat_id,
+                delay=_USER_INPUT_DELETE_DELAY,
+            )
             return WORKOUT_CREATION
 
         intensity_value = text.strip()
@@ -629,15 +774,27 @@ async def handle_workout_creation_input(
         context.user_data.pop(_WORKOUT_CURRENT_SET_KEY, None)
         context.user_data[_WORKOUT_STAGE_KEY] = "add_set_prompt"
         keyboard = build_add_set_keyboard()
-        message = await update.message.reply_text(
+        prompt_message = await user_message.reply_text(
             "✅ Подход добавлен. Хотите создать ещё один?",
             reply_markup=keyboard,
         )
-        _remember_prompt(context, message.message_id, chat_id)
+        _remember_prompt(context, prompt_message.message_id, chat_id)
+        schedule_message_deletion(
+            context,
+            [user_message_id],
+            chat_id,
+            delay=_USER_INPUT_DELETE_DELAY,
+        )
         return WORKOUT_CREATION
 
-    await update.message.reply_text(
+    warning_message = await user_message.reply_text(
         "⚠️ Неизвестный шаг. Попробуйте начать заново.",
+    )
+    schedule_message_deletion(
+        context,
+        [user_message_id, warning_message.message_id],
+        chat_id,
+        delay=_USER_INPUT_DELETE_DELAY,
     )
     context.user_data["conversation_active"] = False
     _reset_workout_flow(context)
