@@ -60,6 +60,8 @@ _EXERCISE_PROMPT_KEY = "exercise_prompt"
 _EXERCISE_DRAFT_KEY = "exercise_draft"
 _EXERCISE_UUID_KEY = "exercise_uuid"
 _EXERCISE_CACHE_KEY = "exercises_cache"
+EXERCISES_PAGE_SIZE = 4
+_EXERCISES_PAGE_KEY = "exercises_page"
 _EXERCISE_GROUP_CHOICES_KEY = "exercise_group_choices"
 _EXERCISE_GROUP_UPDATE_CHOICES_KEY = "exercise_group_update_choices"
 
@@ -147,6 +149,16 @@ async def show_exercises(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+    data = query.data or ""
+
+    if data.startswith("exercise_list:page:"):
+        requested_page = _parse_exercises_page(data)
+    elif data == "exercise_list":
+        requested_page = _get_current_exercises_page(context)
+    else:
+        requested_page = 1
+
+    context.user_data[_EXERCISES_PAGE_KEY] = requested_page
 
     mode = await get_user_mode(user_id)
     if mode != "api":
@@ -159,6 +171,7 @@ async def show_exercises(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=get_exercises_menu(),
         )
         context.user_data["conversation_active"] = False
+        context.user_data[_EXERCISES_PAGE_KEY] = 1
         return ConversationHandler.END
 
     token = await get_valid_access_token(user_id)
@@ -172,6 +185,7 @@ async def show_exercises(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=get_exercises_menu(),
         )
         context.user_data["conversation_active"] = False
+        context.user_data[_EXERCISES_PAGE_KEY] = 1
         return ConversationHandler.END
 
     exercises = await _fetch_exercises(context, user_id, token)
@@ -187,10 +201,21 @@ async def show_exercises(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
+    exercises_list, current_page, total_pages = _prepare_exercises_view(
+        context, exercises, requested_page=requested_page
+    )
+
     await query.message.edit_text(
-        _build_exercises_text(exercises),
+        _build_exercises_text(
+            exercises_list, page=current_page, total_pages=total_pages
+        ),
         parse_mode="HTML",
-        reply_markup=build_exercises_keyboard(exercises),
+        reply_markup=build_exercises_keyboard(
+            exercises_list,
+            page=current_page,
+            page_size=EXERCISES_PAGE_SIZE,
+            total_pages=total_pages,
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -372,6 +397,16 @@ def _parse_groups_page(callback_data: str) -> int:
     return 1
 
 
+def _parse_exercises_page(callback_data: str) -> int:
+    if callback_data.startswith("exercise_list:page:"):
+        try:
+            value = int(callback_data.rsplit(":", 1)[-1])
+        except ValueError:
+            return 1
+        return value if value > 0 else 1
+    return 1
+
+
 def _coerce_page(value: Any) -> int:
     if isinstance(value, int):
         return value if value > 0 else 1
@@ -383,6 +418,10 @@ def _coerce_page(value: Any) -> int:
 
 def _get_current_groups_page(context: ContextTypes.DEFAULT_TYPE) -> int:
     return _coerce_page(context.user_data.get(_GROUPS_PAGE_KEY, 1))
+
+
+def _get_current_exercises_page(context: ContextTypes.DEFAULT_TYPE) -> int:
+    return _coerce_page(context.user_data.get(_EXERCISES_PAGE_KEY, 1))
 
 
 def _sort_groups(groups: Iterable[dict]) -> list[dict]:
@@ -413,6 +452,64 @@ def _paginate_groups(groups: list[dict], page: int) -> tuple[list[dict], int, in
     start = (page - 1) * EXERCISE_GROUPS_PAGE_SIZE
     end = start + EXERCISE_GROUPS_PAGE_SIZE
     return groups[start:end], page, total_pages
+
+
+def _sort_exercises(exercises: Iterable[dict]) -> list[dict]:
+    def _exercise_sort_key(exercise: dict) -> datetime:
+        updated = _parse_datetime(
+            exercise.get("updatedAt")
+            or exercise.get("updated_at")
+            or exercise.get("modifiedAt")
+            or exercise.get("modified_at")
+        )
+        created = _parse_datetime(exercise.get("createdAt") or exercise.get("created_at"))
+        timestamp = updated or created
+        if timestamp is None:
+            timestamp = datetime.min.replace(tzinfo=timezone.utc)
+        return timestamp
+
+    sorted_exercises = [exercise for exercise in exercises if isinstance(exercise, dict)]
+    sorted_exercises.sort(key=_exercise_sort_key, reverse=True)
+    return sorted_exercises
+
+
+def _paginate_exercises(exercises: list[dict], page: int) -> tuple[list[dict], int, int]:
+    if not exercises:
+        return [], 1, 1
+
+    total_pages = (len(exercises) + EXERCISES_PAGE_SIZE - 1) // EXERCISES_PAGE_SIZE
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * EXERCISES_PAGE_SIZE
+    end = start + EXERCISES_PAGE_SIZE
+    page_items = exercises[start:end]
+
+    if not page_items and page > 1:
+        page -= 1
+        start = (page - 1) * EXERCISES_PAGE_SIZE
+        end = start + EXERCISES_PAGE_SIZE
+        page_items = exercises[start:end]
+
+    return page_items, page, total_pages
+
+
+def _prepare_exercises_view(
+    context: ContextTypes.DEFAULT_TYPE,
+    exercises: Iterable[dict],
+    *,
+    requested_page: Optional[int] = None,
+) -> tuple[list[dict], int, int]:
+    exercises_list = [exercise for exercise in exercises if isinstance(exercise, dict)]
+    if requested_page is None:
+        requested_page = _get_current_exercises_page(context)
+    else:
+        requested_page = _coerce_page(requested_page)
+
+    _, current_page, total_pages = _paginate_exercises(exercises_list, requested_page)
+
+    context.user_data[_EXERCISE_CACHE_KEY] = exercises_list
+    context.user_data[_EXERCISES_PAGE_KEY] = current_page
+
+    return exercises_list, current_page, total_pages
 
 
 async def _fetch_groups(
@@ -492,13 +589,18 @@ def _format_exercise_details(exercise: dict) -> str:
     return "\n".join(lines)
 
 
-def _build_exercises_text(exercises: Iterable[dict]) -> str:
+def _build_exercises_text(
+    exercises: Iterable[dict], *, page: Optional[int] = None, total_pages: Optional[int] = None
+) -> str:
     exercises_list = list(exercises)
     if exercises_list:
-        return (
+        text = (
             _EXERCISES_INTRO
             + "Выберите упражнение, чтобы посмотреть детали или изменить его параметры."
         )
+        if page is not None and total_pages is not None:
+            text += f"\n\nСтраница {page} из {total_pages}."
+        return text
     return (
         _EXERCISES_INTRO
         + "Пока у вас нет упражнений. Нажмите «➕ Создать упражнение», чтобы добавить первое."
@@ -524,7 +626,7 @@ async def _fetch_exercises(
         )
         return None
 
-    exercises = _filter_exercises(response.json() or [])
+    exercises = _sort_exercises(_filter_exercises(response.json() or []))
     context.user_data[_EXERCISE_CACHE_KEY] = exercises
     return exercises
 
@@ -558,7 +660,7 @@ async def _fetch_exercise(
     if isinstance(exercises, list):
         updated = [item for item in exercises if isinstance(item, dict) and item.get("uuid") != uuid]
         updated.append(payload)
-        context.user_data[_EXERCISE_CACHE_KEY] = updated
+        context.user_data[_EXERCISE_CACHE_KEY] = _sort_exercises(updated)
 
     return payload
 
@@ -604,13 +706,26 @@ async def show_exercise_details(update: Update, context: ContextTypes.DEFAULT_TY
         exercise = await _fetch_exercise(context, user_id, token, uuid)
         if exercise is None:
             exercises = await _fetch_exercises(context, user_id, token) or []
+            exercises_list, current_page, total_pages = _prepare_exercises_view(
+                context, exercises
+            )
             await query.message.edit_text(
                 (
                     _EXERCISES_INTRO
                     + "⚠️ Не удалось найти выбранное упражнение. Возможно, оно было удалено."
+                    + (
+                        f"\n\nСтраница {current_page} из {total_pages}."
+                        if exercises_list
+                        else ""
+                    ),
                 ),
                 parse_mode="HTML",
-                reply_markup=build_exercises_keyboard(exercises),
+                reply_markup=build_exercises_keyboard(
+                    exercises_list,
+                    page=current_page,
+                    page_size=EXERCISES_PAGE_SIZE,
+                    total_pages=total_pages,
+                ),
             )
             context.user_data["conversation_active"] = False
             return ConversationHandler.END
@@ -976,22 +1091,33 @@ async def handle_exercise_group_selection(update: Update, context: ContextTypes.
         return ConversationHandler.END
 
     exercises = await _fetch_exercises(context, user_id, token) or []
+    exercises_list, current_page, total_pages = _prepare_exercises_view(context, exercises)
 
     prompt = context.user_data.get(_EXERCISE_PROMPT_KEY)
+    keyboard = build_exercises_keyboard(
+        exercises_list,
+        page=current_page,
+        page_size=EXERCISES_PAGE_SIZE,
+        total_pages=total_pages,
+    )
+    text = _build_exercises_text(
+        exercises_list, page=current_page, total_pages=total_pages
+    )
+
     if prompt:
         chat_id, message_id = prompt
         await _safe_edit_message(
             context,
             chat_id,
             message_id,
-            text=_build_exercises_text(exercises),
-            reply_markup=build_exercises_keyboard(exercises),
+            text=text,
+            reply_markup=keyboard,
         )
     else:
         await query.message.edit_text(
-            _build_exercises_text(exercises),
+            text,
             parse_mode="HTML",
-            reply_markup=build_exercises_keyboard(exercises),
+            reply_markup=keyboard,
         )
 
     _reset_exercise_flow(context)
@@ -1043,10 +1169,19 @@ async def handle_exercise_creation_cancel(update: Update, context: ContextTypes.
         context.user_data["conversation_active"] = False
         return ConversationHandler.END
 
+    exercises_list, current_page, total_pages = _prepare_exercises_view(context, exercises)
+
     await query.message.edit_text(
-        _build_exercises_text(exercises),
+        _build_exercises_text(
+            exercises_list, page=current_page, total_pages=total_pages
+        ),
         parse_mode="HTML",
-        reply_markup=build_exercises_keyboard(exercises),
+        reply_markup=build_exercises_keyboard(
+            exercises_list,
+            page=current_page,
+            page_size=EXERCISES_PAGE_SIZE,
+            total_pages=total_pages,
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
@@ -1544,14 +1679,24 @@ async def delete_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return ConversationHandler.END
 
     exercises = await _fetch_exercises(context, user_id, token) or []
+    exercises_list, current_page, total_pages = _prepare_exercises_view(context, exercises)
+
+    message_text = (
+        _EXERCISES_INTRO
+        + "Упражнение успешно удалено. Вы можете создать новое или выбрать другое из списка."
+    )
+    if exercises_list:
+        message_text += f"\n\nСтраница {current_page} из {total_pages}."
 
     await query.message.edit_text(
-        (
-            _EXERCISES_INTRO
-            + "Упражнение успешно удалено. Вы можете создать новое или выбрать другое из списка."
-        ),
+        message_text,
         parse_mode="HTML",
-        reply_markup=build_exercises_keyboard(exercises),
+        reply_markup=build_exercises_keyboard(
+            exercises_list,
+            page=current_page,
+            page_size=EXERCISES_PAGE_SIZE,
+            total_pages=total_pages,
+        ),
     )
     context.user_data["conversation_active"] = False
     return ConversationHandler.END
