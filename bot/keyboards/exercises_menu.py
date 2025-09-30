@@ -80,7 +80,11 @@ def build_exercise_groups_keyboard(
     total_pages: int = 1,
 ) -> InlineKeyboardMarkup:
     """Создаёт клавиатуру со списком групп упражнений с учётом пагинации."""
-    keyboard: list[list[InlineKeyboardButton]] = []
+    keyboard: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton("➕", callback_data="exercise_group:create")]
+    ]
+
+    group_buttons: list[InlineKeyboardButton] = []
     for group in groups:
         if not isinstance(group, dict):
             continue
@@ -88,28 +92,31 @@ def build_exercise_groups_keyboard(
         if not uuid:
             continue
         name = group.get("name") or "Без названия"
-        keyboard.append(
-            [InlineKeyboardButton(_shorten(str(name)), callback_data=f"exercise_group:view:{uuid}")]
+        group_buttons.append(
+            InlineKeyboardButton(
+                _shorten(str(name)), callback_data=f"exercise_group:view:{uuid}"
+            )
         )
-    keyboard.append([InlineKeyboardButton("➕ Создать группу", callback_data="exercise_group:create")])
+
+    for index in range(0, len(group_buttons), 2):
+        keyboard.append(group_buttons[index : index + 2])
+
     navigation_row: list[InlineKeyboardButton] = []
     if total_pages > 1 and page > 1:
         navigation_row.append(
             InlineKeyboardButton(
-                "⬅️ Предыдущая страница меню",
-                callback_data=f"exercise_groups:page:{page - 1}",
+                "◀️", callback_data=f"exercise_groups:page:{page - 1}"
             )
         )
     if total_pages > 1 and page < total_pages:
         navigation_row.append(
             InlineKeyboardButton(
-                "➡️ Следующая страница меню",
-                callback_data=f"exercise_groups:page:{page + 1}",
+                "▶️", callback_data=f"exercise_groups:page:{page + 1}"
             )
         )
     if navigation_row:
         keyboard.append(navigation_row)
-    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="exercises_menu")])
+    keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="exercises_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -146,7 +153,7 @@ def get_exercise_group_actions_keyboard(uuid: str, *, page: int = 1) -> InlineKe
             "📝 Изменить описание", callback_data=f"exercise_group:description:{uuid}"
         )],
         [InlineKeyboardButton("🗑️ Удалить", callback_data=f"exercise_group:ask_delete:{uuid}")],
-        [InlineKeyboardButton("🔙 К списку групп", callback_data=back_callback)],
+        [InlineKeyboardButton("⬅️ К списку", callback_data=back_callback)],
     ]
     return InlineKeyboardMarkup(keyboard)
 
