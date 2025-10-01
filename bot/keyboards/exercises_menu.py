@@ -105,18 +105,18 @@ def build_exercise_groups_keyboard(
     if total_pages > 1 and page > 1:
         navigation_row.append(
             InlineKeyboardButton(
-                "◀️", callback_data=f"exercise_groups:page:{page - 1}"
+                "◀️ Предыдущая страница", callback_data=f"exercise_groups:page:{page - 1}"
             )
         )
     if total_pages > 1 and page < total_pages:
         navigation_row.append(
             InlineKeyboardButton(
-                "▶️", callback_data=f"exercise_groups:page:{page + 1}"
+                "▶️ Следующая страница", callback_data=f"exercise_groups:page:{page + 1}"
             )
         )
     if navigation_row:
         keyboard.append(navigation_row)
-    keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="exercises_menu")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="exercises_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 
