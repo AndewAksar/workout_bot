@@ -40,6 +40,10 @@ _WORKOUT_DETAILS_CACHE_KEY = "workout_details_cache"
 _WORKOUTS_CACHE_KEY = "workouts_cache"
 _WORKOUTS_PAGE_KEY = "workouts_current_page"
 _WORKOUTS_PAGE_SIZE = 4
+_WORKOUTS_INTRO = (
+    "🗂️ <b>Ваши тренировки</b>\n"
+    "Описание: Раздел помогает отслеживать и редактировать тренировки Gym-Stat.\n"
+)
 _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S.%f%z",
     "%Y-%m-%dT%H:%M:%S%z",
@@ -117,6 +121,23 @@ def _sort_workouts(workouts: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(workouts, key=_workout_sort_key, reverse=True)
 
 
+def _build_workouts_text(
+    workouts: Iterable[dict[str, Any]], *, page: int, total_pages: int
+) -> str:
+    workouts_list = list(workouts)
+    if workouts_list:
+        return (
+            _WORKOUTS_INTRO
+            + "\n"
+            + f"📘 Страница {page} из {total_pages}.\n"
+            + "Выберите тренировку, чтобы посмотреть детали или обновить её."
+        )
+    return (
+        _WORKOUTS_INTRO
+        + "Пока у вас нет тренировок. Нажмите «➕», чтобы добавить первую."
+    )
+
+
 def _build_cached_workouts_keyboard(
     context: ContextTypes.DEFAULT_TYPE, *, include_create: bool = True
 ):
@@ -156,9 +177,10 @@ async def show_workouts_menu(
         _set_current_page(context, 1)
         await query.message.edit_text(
             (
-                "🏋️ <b>Тренировки доступны только в режиме Gym-Stat</b>\n"
-                "Переключитесь на интеграцию через кнопку ниже и выполните вход,"
-                " чтобы управлять своими тренировками и синхронизировать их с сайтом."
+                _WORKOUTS_INTRO
+                + "Тренировки доступны только в режиме Gym-Stat.\n"
+                + "Переключитесь на интеграцию через кнопку ниже и выполните вход,"
+                + " чтобы управлять своими тренировками и синхронизировать их с сайтом."
             ),
             parse_mode="HTML",
             reply_markup=keyboard,
@@ -178,9 +200,10 @@ async def show_workouts_menu(
         _set_current_page(context, 1)
         await query.message.edit_text(
             (
-                "🔐 <b>Нужна авторизация</b>\n"
-                "Чтобы просматривать и создавать тренировки, войдите в аккаунт Gym-Stat"
-                " через команду /login или кнопку «Войти» в меню настроек."
+                _WORKOUTS_INTRO
+                + "🔐 <b>Нужна авторизация</b>\n"
+                + "Чтобы просматривать и создавать тренировки, войдите в аккаунт Gym-Stat"
+                + " через команду /login или кнопку «Войти» в меню настроек."
             ),
             parse_mode="HTML",
             reply_markup=keyboard,
@@ -202,8 +225,9 @@ async def show_workouts_menu(
             _set_current_page(context, page)
             await query.message.edit_text(
                 (
-                    "❌ <b>Не удалось получить список тренировок</b>\n"
-                    "Попробуйте повторить попытку чуть позже."
+                    _WORKOUTS_INTRO
+                    + "❌ <b>Не удалось получить список тренировок</b>\n"
+                    + "Попробуйте повторить попытку чуть позже."
                 ),
                 parse_mode="HTML",
                 reply_markup=build_workouts_keyboard(
@@ -222,9 +246,8 @@ async def show_workouts_menu(
     page = min(max(requested_page, 1), total_pages)
     _set_current_page(context, page)
 
-    description = (
-        "🗂️ <b>Ваши тренировки</b>\n"
-        "Выберите тренировку, чтобы посмотреть подробности, либо создайте новую."
+    description = _build_workouts_text(
+        workouts, page=page, total_pages=total_pages
     )
     await query.message.edit_text(
         description,

@@ -55,6 +55,13 @@ def build_workouts_keyboard(
     page_items = workouts_list[start:end]
 
     keyboard: list[list[InlineKeyboardButton]] = []
+
+    if include_create:
+        keyboard.append([
+            InlineKeyboardButton("➕", callback_data="workout:create"),
+        ])
+
+    workout_buttons: list[InlineKeyboardButton] = []
     for workout in page_items:
         uuid = workout.get("uuid")
         if not uuid:
@@ -62,31 +69,31 @@ def build_workouts_keyboard(
         label = _format_workout_label(workout.get("name"), workout.get("date"))
         if len(label) > 64:
             label = label[:63] + "…"
-        keyboard.append([
-            InlineKeyboardButton(label, callback_data=f"workout:view:{uuid}"),
-        ])
+        workout_buttons.append(
+            InlineKeyboardButton(label, callback_data=f"workout:view:{uuid}")
+        )
+
+    for index in range(0, len(workout_buttons), 2):
+        keyboard.append(workout_buttons[index : index + 2])
 
     if sanitized_total > 1:
         navigation_row: list[InlineKeyboardButton] = []
         if sanitized_page > 1:
             navigation_row.append(
                 InlineKeyboardButton(
-                    "⬅️", callback_data=f"workouts:page:{sanitized_page - 1}"
+                    "◀️ Предыдущая страница",
+                    callback_data=f"workouts:page:{sanitized_page - 1}",
                 )
             )
         if sanitized_page < sanitized_total:
             navigation_row.append(
                 InlineKeyboardButton(
-                    "➡️", callback_data=f"workouts:page:{sanitized_page + 1}"
+                    "▶️ Следующая страница",
+                    callback_data=f"workouts:page:{sanitized_page + 1}",
                 )
             )
         if navigation_row:
             keyboard.append(navigation_row)
-
-    if include_create:
-        keyboard.append([
-            InlineKeyboardButton("➕ Создать тренировку", callback_data="workout:create"),
-        ])
 
     keyboard.append([
         InlineKeyboardButton("🔙 Назад", callback_data="main_menu"),
