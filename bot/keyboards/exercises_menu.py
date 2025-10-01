@@ -46,25 +46,35 @@ def build_exercises_keyboard(
     start = (page - 1) * page_size
     end = start + page_size
 
+    keyboard.append([InlineKeyboardButton("➕", callback_data="exercise:create")])
+
+    exercise_buttons: list[InlineKeyboardButton] = []
     for exercise in exercises_list[start:end]:
         uuid = exercise.get("uuid")
         if not uuid:
             continue
         name = exercise.get("name") or "Без названия"
-        keyboard.append(
-            [InlineKeyboardButton(_shorten(str(name)), callback_data=f"exercise:view:{uuid}")]
+        exercise_buttons.append(
+            InlineKeyboardButton(
+                _shorten(str(name)), callback_data=f"exercise:view:{uuid}"
+            )
         )
 
-    keyboard.append([InlineKeyboardButton("➕ Создать упражнение", callback_data="exercise:create")])
+    for index in range(0, len(exercise_buttons), 2):
+        keyboard.append(exercise_buttons[index : index + 2])
 
     navigation_row: list[InlineKeyboardButton] = []
     if total_pages > 1 and page > 1:
         navigation_row.append(
-            InlineKeyboardButton("⬅️", callback_data=f"exercise_list:page:{page - 1}")
+            InlineKeyboardButton(
+                "◀️ Предыдущая страница", callback_data=f"exercise_list:page:{page - 1}"
+            )
         )
     if total_pages > 1 and page < total_pages:
         navigation_row.append(
-            InlineKeyboardButton("➡️", callback_data=f"exercise_list:page:{page + 1}")
+            InlineKeyboardButton(
+                "▶️ Следующая страница", callback_data=f"exercise_list:page:{page + 1}"
+            )
         )
     if navigation_row:
         keyboard.append(navigation_row)
